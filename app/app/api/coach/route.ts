@@ -42,6 +42,7 @@ function coachReply(message: string, tasks: Task[], checkin: Checkin | null) {
 }
 
 async function generateModelReply(message: string, tasks: Task[], checkin: Checkin | null, fallback: string) {
+  if (env.OPENAI_API_ENABLED !== 'true') return { reply: fallback, mode: 'guided' as const };
   const primaryKey = env.OPENAI_API_KEY;
   if (!primaryKey) return { reply: fallback, mode: 'guided' as const };
   const openTasks = tasks.filter((task) => !task.completed).slice(0, 8);
