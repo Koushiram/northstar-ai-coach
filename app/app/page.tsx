@@ -7,10 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 
 type Priority = { id: string; title: string; meta: string; completed: boolean | number; position?: number };
 type Viewer = { userId: string; displayName: string; email: string };
 type Checkin = { checkinDate: string; sleepMinutes: number; energy: number; mood: number; soreness: number };
+type PlanItem = { id: string; time: string; title: string; type: string; duration: number };
 
 const demoPriorities: Priority[] = [
   { id: 'demo-1', title: 'Finish Northstar product brief', meta: 'Deep work · 75 min', completed: false },
@@ -36,6 +38,11 @@ export default function Home() {
   const [editingCheckin, setEditingCheckin] = useState(false);
   const [savingCheckin, setSavingCheckin] = useState(false);
   const [checkinDraft, setCheckinDraft] = useState({ sleepHours: 7.5, energy: 4, mood: 4, soreness: 2 });
+  const [planItems, setPlanItems] = useState<PlanItem[]>([]);
+  const [generatingPlan, setGeneratingPlan] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewDraft, setReviewDraft] = useState({ win: '', reflection: '', energy: 3 });
+  const [reviewSaved, setReviewSaved] = useState(false);
   const [focusActive, setFocusActive] = useState(false);
   const [listening, setListening] = useState(false);
   const [planAdjusted, setPlanAdjusted] = useState(false);
@@ -61,6 +68,8 @@ export default function Home() {
           setCheckinDraft({ sleepHours: data.checkin.sleepMinutes / 60, energy: data.checkin.energy, mood: data.checkin.mood, soreness: data.checkin.soreness });
         } else setEditingCheckin(true);
       }
+      const planResponse = await fetch(`/api/plan?date=${localDate}`, { cache: 'no-store' });
+      if (planResponse.ok) { const data = await planResponse.json() as { plan: { items: PlanItem[] } | null }; if (data.plan) setPlanItems(data.plan.items); }
     };
     void load();
   }, []);
@@ -106,6 +115,19 @@ export default function Home() {
     setSavingCheckin(false);
   };
 
+  const generatePlan = async () => {
+    if (!viewer) return; setGeneratingPlan(true);
+    const response = await fetch('/api/plan', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ date: new Date().toLocaleDateString('en-CA') }) });
+    if (response.ok) { const data = await response.json() as { plan: { items: PlanItem[] } }; setPlanItems(data.plan.items); }
+    setGeneratingPlan(false);
+  };
+
+  const saveReview = async (event: FormEvent) => {
+    event.preventDefault(); if (!viewer) return;
+    const response = await fetch('/api/review', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ date: new Date().toLocaleDateString('en-CA'), ...reviewDraft }) });
+    if (response.ok) { setReviewSaved(true); setReviewOpen(false); }
+  };
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex min-h-screen max-w-[1500px]">
@@ -124,7 +146,7 @@ export default function Home() {
           <div className="mt-auto rounded-2xl border border-border/70 bg-card p-4">
             <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground"><Moon className="size-4 text-violet-500" />Evening review</div>
             <p className="text-sm font-medium">Close the day with intention.</p>
-            <Button variant="outline" className="mt-4 w-full justify-between">Start at 8:30 PM <ChevronRight /></Button>
+            <Button onClick={() => setReviewOpen(true)} variant="outline" className="mt-4 w-full justify-between">{reviewSaved ? 'Review saved' : 'Start at 8:30 PM'} <ChevronRight /></Button>
           </div>
         </aside>
 
@@ -193,10 +215,10 @@ export default function Home() {
                 </Card>
 
                 <Card>
-                  <CardHeader><CardTitle>Today’s rhythm</CardTitle><CardDescription>4 planned blocks · 1h 30m flexible</CardDescription><CardAction><Button variant="ghost" size="icon" aria-label="More schedule options"><MoreHorizontal /></Button></CardAction></CardHeader>
+                  <CardHeader><CardTitle>Today’s rhythm</CardTitle><CardDescription>{planItems.length ? `${planItems.length} saved blocks` : 'Generate a plan from your priorities'}</CardDescription><CardAction><Button onClick={generatePlan} disabled={!viewer || generatingPlan} variant="ghost" size="sm">{generatingPlan ? 'Planning…' : planItems.length ? 'Replan' : 'Generate'}</Button></CardAction></CardHeader>
                   <CardContent className="space-y-3">
-                    {timeline.map((item) => (
-                      <div key={item.time} className="grid grid-cols-[46px_10px_1fr] items-center gap-3"><span className="text-xs tabular-nums text-muted-foreground">{item.time}</span><span className={`size-2 rounded-full timeline-${item.tone}`} /><div className="min-w-0 border-b border-border/70 pb-3 last:border-0"><p className="truncate text-sm font-medium">{item.title}</p><p className="text-xs text-muted-foreground">{item.type}</p></div></div>
+                    {(planItems.length ? planItems : timeline).map((item) => (
+                      <div key={`${item.time}-${item.title}`} className="grid grid-cols-[46px_10px_1fr] items-center gap-3"><span className="text-xs tabular-nums text-muted-foreground">{item.time}</span><span className={`size-2 rounded-full timeline-${'tone' in item ? item.tone : item.type === 'Focus' ? 'focus' : 'open'}`} /><div className="min-w-0 border-b border-border/70 pb-3 last:border-0"><p className="truncate text-sm font-medium">{item.title}</p><p className="text-xs text-muted-foreground">{item.type}{'duration' in item ? ` · ${item.duration} min` : ''}</p></div></div>
                     ))}
                   </CardContent>
                 </Card>
@@ -237,6 +259,20 @@ export default function Home() {
             <button className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-medium">Ask Northstar anything…</span><span className="block truncate text-xs text-muted-foreground">Try “Replan my afternoon” or “Log a $12 lunch”</span></button>
             <div className={`hidden items-center gap-1 text-xs sm:flex ${listening ? 'font-medium text-red-600' : 'text-muted-foreground'}`}><Clock3 className="size-3.5" /> {listening ? 'Listening…' : 'Ready'}</div>
           </div>
+
+          {reviewOpen && (
+            <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/25 p-4 backdrop-blur-sm">
+              <Card className="w-full max-w-md shadow-2xl">
+                <CardHeader><CardTitle>Evening review</CardTitle><CardDescription>Close the loop so tomorrow starts clearly.</CardDescription><CardAction><Button onClick={() => setReviewOpen(false)} variant="ghost" size="icon"><X /></Button></CardAction></CardHeader>
+                <CardContent><form onSubmit={saveReview} className="space-y-4">
+                  <label className="block text-xs font-medium">What was today’s biggest win?<Input className="mt-1" value={reviewDraft.win} onChange={(e) => setReviewDraft((d) => ({...d, win:e.target.value}))} required /></label>
+                  <label className="block text-xs font-medium">What should change tomorrow?<Textarea className="mt-1" value={reviewDraft.reflection} onChange={(e) => setReviewDraft((d) => ({...d, reflection:e.target.value}))} required /></label>
+                  <div><p className="mb-2 text-xs font-medium">Evening energy</p><div className="grid grid-cols-5 gap-1">{[1,2,3,4,5].map((score) => <button type="button" key={score} onClick={() => setReviewDraft((d) => ({...d, energy:score}))} className={`h-9 rounded-lg border text-sm ${reviewDraft.energy===score?'bg-primary text-primary-foreground':'bg-background'}`}>{score}</button>)}</div></div>
+                  <Button type="submit" className="w-full">Save review & close the day</Button>
+                </form></CardContent>
+              </Card>
+            </div>
+          )}
         </section>
       </div>
     </main>
