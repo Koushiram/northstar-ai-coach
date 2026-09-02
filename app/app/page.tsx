@@ -1,16 +1,20 @@
 'use client';
 
-import { useState } from 'react';
-import { ArrowRight, CalendarDays, Check, ChevronRight, CircleDollarSign, Clock3, Flame, HeartPulse, Menu, MessageCircle, Mic, Moon, MoreHorizontal, Plus, Sparkles, SunMedium, Target } from 'lucide-react';
+import { FormEvent, useEffect, useState } from 'react';
+import { ArrowRight, CalendarDays, Check, ChevronRight, CircleDollarSign, Clock3, Flame, HeartPulse, LogIn, Menu, MessageCircle, Mic, Moon, MoreHorizontal, Plus, Sparkles, SunMedium, Target, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { Input } from '@/components/ui/input';
 
-const priorities = [
-  { id: 1, title: 'Finish Northstar product brief', meta: 'Deep work · 75 min' },
-  { id: 2, title: 'Review monthly spending', meta: 'Finance · 25 min' },
-  { id: 3, title: 'Evening strength session', meta: 'Health · 45 min' },
+type Priority = { id: string; title: string; meta: string; completed: boolean | number; position?: number };
+type Viewer = { userId: string; displayName: string; email: string };
+
+const demoPriorities: Priority[] = [
+  { id: 'demo-1', title: 'Finish Northstar product brief', meta: 'Deep work · 75 min', completed: false },
+  { id: 'demo-2', title: 'Review monthly spending', meta: 'Finance · 25 min', completed: false },
+  { id: 'demo-3', title: 'Evening strength session', meta: 'Health · 45 min', completed: false },
 ];
 
 const timeline = [
@@ -21,11 +25,60 @@ const timeline = [
 ];
 
 export default function Home() {
-  const [completed, setCompleted] = useState<number[]>([]);
+  const [priorities, setPriorities] = useState<Priority[]>(demoPriorities);
+  const [viewer, setViewer] = useState<Viewer | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [addingTask, setAddingTask] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [savingTask, setSavingTask] = useState(false);
   const [focusActive, setFocusActive] = useState(false);
   const [listening, setListening] = useState(false);
   const [planAdjusted, setPlanAdjusted] = useState(false);
-  const togglePriority = (id: number) => setCompleted((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]);
+  useEffect(() => {
+    const load = async () => {
+      const meResponse = await fetch('/api/me', { cache: 'no-store' });
+      const me = await meResponse.json() as { user: Viewer | null };
+      setViewer(me.user);
+      setAuthReady(true);
+      if (!me.user) return;
+      await fetch('/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ seed: true }) });
+      const taskResponse = await fetch('/api/tasks', { cache: 'no-store' });
+      if (taskResponse.ok) {
+        const data = await taskResponse.json() as { tasks: Priority[] };
+        setPriorities(data.tasks);
+      }
+    };
+    void load();
+  }, []);
+
+  const togglePriority = async (id: string) => {
+    const current = priorities.find((priority) => priority.id === id);
+    if (!current) return;
+    const completed = !Boolean(current.completed);
+    setPriorities((items) => items.map((item) => item.id === id ? { ...item, completed } : item));
+    if (viewer && !id.startsWith('demo-')) {
+      const response = await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ completed }) });
+      if (!response.ok) setPriorities((items) => items.map((item) => item.id === id ? { ...item, completed: !completed } : item));
+    }
+  };
+
+  const addTask = async (event: FormEvent) => {
+    event.preventDefault();
+    const title = newTaskTitle.trim();
+    if (!viewer || !title) return;
+    setSavingTask(true);
+    const response = await fetch('/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title }) });
+    if (response.ok) {
+      const data = await response.json() as { task: Priority };
+      setPriorities((items) => [...items, data.task]);
+      setNewTaskTitle(''); setAddingTask(false);
+    }
+    setSavingTask(false);
+  };
+
+  const completedCount = priorities.filter((priority) => Boolean(priority.completed)).length;
+  const firstName = viewer?.displayName.split(/\s|@/)[0] || 'Koushiram';
+  const initials = viewer ? viewer.displayName.split(/\s|@/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() : 'KN';
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -53,11 +106,15 @@ export default function Home() {
           <header className="mb-8 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Button variant="outline" size="icon" className="lg:hidden" aria-label="Open menu"><Menu /></Button>
-              <div><p className="text-sm text-muted-foreground">Wednesday, 2 September</p><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Good morning, Koushiram</h1></div>
+              <div><p className="text-sm text-muted-foreground">Wednesday, 2 September</p><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Good morning, {firstName}</h1></div>
             </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="icon" aria-label="Open assistant chat"><MessageCircle /></Button>
-              <div className="grid size-9 place-items-center rounded-full bg-[#d9f3e5] text-sm font-semibold text-[#1a5f47]">KN</div>
+              {authReady && !viewer ? (
+                <a href="/signin-with-chatgpt?return_to=%2F" target="_top" className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground"><LogIn className="size-4" /> Sign in</a>
+              ) : (
+                <div title={viewer?.email || 'Demo mode'} className="grid size-9 place-items-center rounded-full bg-[#d9f3e5] text-sm font-semibold text-[#1a5f47]">{initials}</div>
+              )}
             </div>
           </header>
 
@@ -86,9 +143,21 @@ export default function Home() {
 
               <div className="grid gap-5 md:grid-cols-2">
                 <Card>
-                  <CardHeader><CardTitle>Today’s priorities</CardTitle><CardDescription>{completed.length} of 3 complete</CardDescription><CardAction><Button variant="ghost" size="icon" aria-label="Add priority"><Plus /></Button></CardAction></CardHeader>
+                  <CardHeader><CardTitle>Today’s priorities</CardTitle><CardDescription>{completedCount} of {priorities.length} complete · {viewer ? 'Saved' : 'Demo mode'}</CardDescription><CardAction><Button onClick={() => setAddingTask((open) => !open)} variant="ghost" size="icon" aria-label="Add priority">{addingTask ? <X /> : <Plus />}</Button></CardAction></CardHeader>
                   <CardContent className="space-y-2">
-                    {priorities.map((priority) => { const done = completed.includes(priority.id); return (
+                    {addingTask && (viewer ? (
+                      <form onSubmit={addTask} className="mb-3 flex gap-2 rounded-xl bg-muted/60 p-2">
+                        <Input autoFocus value={newTaskTitle} onChange={(event) => setNewTaskTitle(event.target.value)} placeholder="Add a priority…" maxLength={140} />
+                        <Button type="submit" disabled={savingTask || !newTaskTitle.trim()}>{savingTask ? 'Saving' : 'Add'}</Button>
+                      </form>
+                    ) : (
+                      <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                        <p className="font-medium">Sign in to save your priorities</p>
+                        <p className="mt-1 text-xs text-emerald-800/70">Your tasks will stay private and follow you across devices.</p>
+                        <a href="/signin-with-chatgpt?return_to=%2F" target="_top" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold underline underline-offset-4">Continue with ChatGPT <ArrowRight className="size-3" /></a>
+                      </div>
+                    ))}
+                    {priorities.map((priority) => { const done = Boolean(priority.completed); return (
                       <button key={priority.id} onClick={() => togglePriority(priority.id)} className="group flex w-full items-start gap-3 rounded-xl border border-transparent p-2.5 text-left transition-colors hover:border-border hover:bg-muted/50">
                         <span className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border transition-colors ${done ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background'}`}>{done && <Check className="size-3" />}</span>
                         <span className="min-w-0"><span className={`block text-sm font-medium ${done ? 'text-muted-foreground line-through' : ''}`}>{priority.title}</span><span className="mt-1 block text-xs text-muted-foreground">{priority.meta}</span></span>
