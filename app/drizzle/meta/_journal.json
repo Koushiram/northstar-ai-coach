@@ -15,6 +15,13 @@
       "when": 1788322780305,
       "tag": "0001_organic_lady_vermin",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788343099416,
+      "tag": "0002_omniscient_ultragirl",
+      "breakpoints": true
     }
   ]
 }

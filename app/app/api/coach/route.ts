@@ -66,6 +66,35 @@ function reviewFromMessage(message: string) {
   return match ? { win: match[1].trim(), reflection: match[2].trim(), energy: Number(match[3]) } : null;
 }
 
+const moneyNumber = (value: string) => Number(value.replace(/[$,\s]/g, ''));
+
+function balanceFromMessage(message: string) {
+  const match = message.match(/(?:set|update|change)\s+(?:my\s+)?(?:account\s+)?balance\s+(?:to|as)\s*\$?([\d,]+(?:\.\d{1,2})?)/i);
+  return match ? moneyNumber(match[1]) : null;
+}
+
+function expenseFromMessage(message: string) {
+  const match = message.match(/(?:log|add|record|spent|spend)\s+(?:an?\s+)?(?:expense\s+(?:of\s+)?)?\$?([\d,]+(?:\.\d{1,2})?)\s*(?:for|on|at)?\s*(.*)/i);
+  if (!match) return null; const amount = moneyNumber(match[1]); const note = match[2].trim().replace(/[.!]+$/, '') || 'Expense';
+  const category = /food|lunch|dinner|breakfast|coffee|restaurant/i.test(note) ? 'Food' : /fuel|uber|taxi|bus|train|transport/i.test(note) ? 'Transport' : /gym|health|doctor|pharmacy/i.test(note) ? 'Health' : /bill|rent|electric|internet|phone/i.test(note) ? 'Bills' : 'Other';
+  return Number.isFinite(amount) && amount > 0 ? { amount, note, category } : null;
+}
+
+function goalFromMessage(message: string) {
+  const match = message.match(/(?:add|create|set)\s+(?:a\s+)?goal\s*(?:to|for)?\s*[:\-]?\s*(.+)/i);
+  return match?.[1]?.trim().replace(/[.!]+$/, '') || null;
+}
+
+function workoutFromMessage(message: string) {
+  const match = message.match(/(?:log|add|record)\s+(?:a\s+)?(?:(\d+)\s*(?:minute|min)\s+)?(?:workout|gym(?:\s+session)?)\s*(?:for|:)?\s*(.*)/i);
+  if (!match) return null; return { durationMinutes: Number(match[1]) || 45, title: match[2]?.trim().replace(/[.!]+$/, '') || 'Gym workout' };
+}
+
+function mealFromMessage(message: string) {
+  const match = message.match(/(?:log|add|record)\s+(?:a\s+)?(?:meal|food)\s*(?:for|:)?\s*(.+)/i);
+  if (!match) return null; const detail=match[1].trim().replace(/[.!]+$/,''); const calories=Number(detail.match(/(\d+)\s*(?:kcal|calories)/i)?.[1]||0); const proteinGrams=Number(detail.match(/(\d+)\s*g\s*(?:protein)?/i)?.[1]||0); return { title: detail.split(/,|\s+with\s+/)[0].slice(0,80), detail, calories, proteinGrams };
+}
+
 function readiness(checkin: Checkin | null) {
   if (!checkin || checkin.sleepMinutes == null || checkin.energy == null || checkin.soreness == null) return 70;
   return Math.round(Math.min(checkin.sleepMinutes / 480, 1) * 40 + (checkin.energy / 5) * 35 + ((6 - checkin.soreness) / 5) * 25);
@@ -78,7 +107,7 @@ function coachReply(message: string, tasks: Task[], checkin: Checkin | null) {
   const lower = message.toLowerCase();
   const lowRecovery = score < 55;
 
-  if (/money|budget|spend|transaction|bank/i.test(lower)) return 'Money actions are not connected yet. I can discuss the demo card, but I will not invent or change financial data.';
+  if (/money|budget|spend|transaction|bank|balance|expense/i.test(lower)) return 'I can update your balance, record expenses, and summarize this month. Try “set my balance to 50,000” or “log $18 for lunch”.';
   if (/calendar|meeting|appointment/i.test(lower)) return 'Calendar actions are not connected yet. Connect Google Calendar before I create or move real events.';
 
   if (/what.*(next|now)|priority|focus/.test(lower)) {
@@ -188,6 +217,21 @@ export async function POST(request: Request) {
   const db = getD1();
   await ensureSchema(db);
   const savedTasks = (await db.prepare('SELECT id, title, meta, completed, position FROM tasks WHERE user_id = ? ORDER BY position, created_at').bind(user.userId).all<Task>()).results ?? [];
+  const requestedBalance = balanceFromMessage(message);
+  if (requestedBalance !== null) {
+    if (!Number.isFinite(requestedBalance) || requestedBalance < 0 || requestedBalance > 1_000_000_000) return NextResponse.json({error:'Enter a balance between 0 and 1 billion.'},{status:400});
+    const now=Date.now(); const cents=Math.round(requestedBalance*100);
+    await db.prepare(`INSERT INTO money_accounts(id,user_id,name,balance_cents,currency,monthly_budget_cents,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET balance_cents=excluded.balance_cents,updated_at=excluded.updated_at`).bind(crypto.randomUUID(),user.userId,'Main balance',cents,'AUD',0,now,now).run();
+    return NextResponse.json({reply:`Updated your balance to $${requestedBalance.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}.`,mode:'action',action:{type:'money_updated'}});
+  }
+  const requestedExpense=expenseFromMessage(message);
+  if(requestedExpense){const now=Date.now();await db.prepare('INSERT INTO expenses(id,user_id,amount_cents,category,note,spent_on,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),user.userId,Math.round(requestedExpense.amount*100),requestedExpense.category,requestedExpense.note,date,now,now).run();return NextResponse.json({reply:`Logged $${requestedExpense.amount.toFixed(2)} for ${requestedExpense.note} under ${requestedExpense.category}.`,mode:'action',action:{type:'expense_created'}});}
+  const requestedGoal=goalFromMessage(message);
+  if(requestedGoal){const now=Date.now();await db.prepare('INSERT INTO goals(id,user_id,title,area,target_value,current_value,unit,target_date,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),user.userId,requestedGoal,/gym|fitness|weight|run|strength/i.test(requestedGoal)?'Fitness':'Personal',100,0,'%',null,'active',now,now).run();return NextResponse.json({reply:`Created the goal “${requestedGoal}”. Open Goals to track milestones and progress.`,mode:'action',action:{type:'goal_created'}});}
+  const requestedWorkout=workoutFromMessage(message);
+  if(requestedWorkout){const now=Date.now();await db.prepare('INSERT INTO health_logs(id,user_id,log_date,kind,title,detail,duration_minutes,calories,protein_grams,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),user.userId,date,'workout',requestedWorkout.title,'Logged by Northstar coach',requestedWorkout.durationMinutes,null,null,now,now).run();return NextResponse.json({reply:`Logged your ${requestedWorkout.durationMinutes}-minute workout: ${requestedWorkout.title}.`,mode:'action',action:{type:'health_logged'}});}
+  const requestedMeal=mealFromMessage(message);
+  if(requestedMeal){const now=Date.now();await db.prepare('INSERT INTO health_logs(id,user_id,log_date,kind,title,detail,duration_minutes,calories,protein_grams,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),user.userId,date,'meal',requestedMeal.title,requestedMeal.detail,null,requestedMeal.calories||null,requestedMeal.proteinGrams||null,now,now).run();return NextResponse.json({reply:`Logged your meal: ${requestedMeal.detail}.`,mode:'action',action:{type:'health_logged'}});}
   const requestedTaskTitle = taskTitleFromMessage(message);
   if (requestedTaskTitle) {
     if (requestedTaskTitle.length > 140) return NextResponse.json({ error: 'Keep the task title under 140 characters.' }, { status: 400 });
