@@ -42,9 +42,6 @@ function coachReply(message: string, tasks: Task[], checkin: Checkin | null) {
 }
 
 async function generateModelReply(message: string, tasks: Task[], checkin: Checkin | null, fallback: string) {
-  if (env.OPENAI_API_ENABLED !== 'true') return { reply: fallback, mode: 'guided' as const };
-  const primaryKey = env.OPENAI_API_KEY;
-  if (!primaryKey) return { reply: fallback, mode: 'guided' as const };
   const openTasks = tasks.filter((task) => !task.completed).slice(0, 8);
   const context = {
     readinessScore: readiness(checkin),
@@ -52,6 +49,38 @@ async function generateModelReply(message: string, tasks: Task[], checkin: Check
     priorities: openTasks.map(({ title, meta }) => ({ title, meta })),
     completedToday: tasks.length - openTasks.length,
   };
+  const instructions = 'You are Northstar, a calm personal coach. Use only the supplied daily context. Give one clear recommendation, a short reason, and one concrete next action. Never invent calendar, financial, health, or task data. Do not diagnose or provide medical treatment. Be concise and supportive.';
+
+  if (env.NVIDIA_API_KEY) {
+    try {
+      const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${env.NVIDIA_API_KEY}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: env.NVIDIA_MODEL || 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
+          messages: [
+            { role: 'system', content: instructions },
+            { role: 'user', content: `Daily context:\n${JSON.stringify(context)}\n\nUser: ${message}` },
+          ],
+          temperature: 0.2,
+          top_p: 0.95,
+          max_tokens: 280,
+          stream: false,
+          chat_template_kwargs: { enable_thinking: false },
+        }),
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (response.ok) {
+        const result = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+        const reply = result.choices?.[0]?.message?.content?.trim();
+        if (reply) return { reply, mode: 'ai' as const };
+      }
+    } catch { /* Fall through to the optional OpenAI provider or private guided coach. */ }
+  }
+
+  if (env.OPENAI_API_ENABLED !== 'true') return { reply: fallback, mode: 'guided' as const };
+  const primaryKey = env.OPENAI_API_KEY;
+  if (!primaryKey) return { reply: fallback, mode: 'guided' as const };
   const requestModel = async (apiKey: string) => {
     const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
@@ -60,7 +89,7 @@ async function generateModelReply(message: string, tasks: Task[], checkin: Check
         model: env.OPENAI_MODEL || 'gpt-5.4-mini',
         store: false,
         max_output_tokens: 240,
-        instructions: 'You are Northstar, a calm personal coach. Use only the supplied daily context. Give one clear recommendation, a short reason, and one concrete next action. Never invent calendar, financial, health, or task data. Do not diagnose or provide medical treatment. Be concise and supportive.',
+        instructions,
         input: `Daily context:\n${JSON.stringify(context)}\n\nUser: ${message}`,
       }),
       signal: AbortSignal.timeout(12_000),
