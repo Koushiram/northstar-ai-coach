@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 
 type Priority = { id: string; title: string; meta: string; completed: boolean | number; position?: number };
 type Viewer = { userId: string; displayName: string; email: string };
+type Checkin = { checkinDate: string; sleepMinutes: number; energy: number; mood: number; soreness: number };
 
 const demoPriorities: Priority[] = [
   { id: 'demo-1', title: 'Finish Northstar product brief', meta: 'Deep work · 75 min', completed: false },
@@ -31,6 +32,10 @@ export default function Home() {
   const [addingTask, setAddingTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [savingTask, setSavingTask] = useState(false);
+  const [checkin, setCheckin] = useState<Checkin | null>(null);
+  const [editingCheckin, setEditingCheckin] = useState(false);
+  const [savingCheckin, setSavingCheckin] = useState(false);
+  const [checkinDraft, setCheckinDraft] = useState({ sleepHours: 7.5, energy: 4, mood: 4, soreness: 2 });
   const [focusActive, setFocusActive] = useState(false);
   const [listening, setListening] = useState(false);
   const [planAdjusted, setPlanAdjusted] = useState(false);
@@ -46,6 +51,15 @@ export default function Home() {
       if (taskResponse.ok) {
         const data = await taskResponse.json() as { tasks: Priority[] };
         setPriorities(data.tasks);
+      }
+      const localDate = new Date().toLocaleDateString('en-CA');
+      const checkinResponse = await fetch(`/api/checkins?date=${localDate}`, { cache: 'no-store' });
+      if (checkinResponse.ok) {
+        const data = await checkinResponse.json() as { checkin: Checkin | null };
+        if (data.checkin) {
+          setCheckin(data.checkin);
+          setCheckinDraft({ sleepHours: data.checkin.sleepMinutes / 60, energy: data.checkin.energy, mood: data.checkin.mood, soreness: data.checkin.soreness });
+        } else setEditingCheckin(true);
       }
     };
     void load();
@@ -79,6 +93,18 @@ export default function Home() {
   const completedCount = priorities.filter((priority) => Boolean(priority.completed)).length;
   const firstName = viewer?.displayName.split(/\s|@/)[0] || 'Koushiram';
   const initials = viewer ? viewer.displayName.split(/\s|@/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() : 'KN';
+  const readinessScore = checkin ? Math.round(Math.min(checkin.sleepMinutes / 480, 1) * 40 + (checkin.energy / 5) * 35 + ((6 - checkin.soreness) / 5) * 25) : 78;
+  const recoveryDay = Boolean(checkin && (checkin.energy <= 2 || checkin.sleepMinutes < 360 || checkin.soreness >= 4));
+
+  const saveCheckin = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!viewer) return;
+    setSavingCheckin(true);
+    const nextCheckin: Checkin = { checkinDate: new Date().toLocaleDateString('en-CA'), sleepMinutes: Math.round(checkinDraft.sleepHours * 60), energy: checkinDraft.energy, mood: checkinDraft.mood, soreness: checkinDraft.soreness };
+    const response = await fetch('/api/checkins', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(nextCheckin) });
+    if (response.ok) { setCheckin(nextCheckin); setEditingCheckin(false); }
+    setSavingCheckin(false);
+  };
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -123,8 +149,8 @@ export default function Home() {
               <Card className="overflow-visible border-0 bg-primary text-primary-foreground ring-0 shadow-[0_24px_70px_-32px_rgba(22,81,63,.7)]">
                 <CardHeader className="pb-0">
                   <div className="mb-4 flex items-center gap-2 text-xs font-medium text-primary-foreground/70"><span className="flex size-6 items-center justify-center rounded-full bg-white/10"><Sparkles className="size-3.5" /></span>YOUR NEXT BEST MOVE</div>
-                  <CardTitle className="max-w-2xl text-2xl font-medium leading-tight sm:text-3xl">Protect the next 75 minutes for the Northstar product brief.</CardTitle>
-                  <CardDescription className="mt-2 max-w-xl text-primary-foreground/70">Your energy is strongest now, and the rest of your morning has enough buffer before the team check-in.</CardDescription>
+                  <CardTitle className="max-w-2xl text-2xl font-medium leading-tight sm:text-3xl">{recoveryDay ? 'Reduce today’s load and protect one focused priority.' : 'Protect the next 75 minutes for the Northstar product brief.'}</CardTitle>
+                  <CardDescription className="mt-2 max-w-xl text-primary-foreground/70">{recoveryDay ? 'Your check-in shows limited recovery. Keep the product brief, add more buffer, and make the workout optional.' : 'Your energy is strongest now, and the rest of your morning has enough buffer before the team check-in.'}</CardDescription>
                 </CardHeader>
                 <CardContent className="mt-6 flex flex-wrap gap-3">
                   <Button onClick={() => setFocusActive((active) => !active)} className="h-10 bg-white px-4 text-primary hover:bg-white/90">
@@ -179,11 +205,19 @@ export default function Home() {
 
             <div className="space-y-5">
               <Card>
-                <CardHeader><CardTitle>Daily readiness</CardTitle><CardAction><Badge className="bg-emerald-100 text-emerald-800">Balanced</Badge></CardAction></CardHeader>
+                <CardHeader><CardTitle>Daily readiness</CardTitle><CardDescription>{checkin ? 'Based on today’s check-in' : 'Complete your morning check-in'}</CardDescription><CardAction>{viewer ? <Button onClick={() => setEditingCheckin((open) => !open)} variant="ghost" size="sm">{editingCheckin ? 'Close' : checkin ? 'Update' : 'Check in'}</Button> : <Badge className="bg-emerald-100 text-emerald-800">Demo</Badge>}</CardAction></CardHeader>
                 <CardContent>
-                  <div className="mb-5 flex items-end gap-3"><span className="text-4xl font-semibold tracking-tight">78</span><span className="pb-1 text-sm text-muted-foreground">/ 100</span></div>
-                  <Progress value={78} className="[&_[data-slot=progress-indicator]]:bg-emerald-500" />
-                  <div className="mt-5 grid grid-cols-3 gap-2 text-center">{[['Sleep', '7h 18m'], ['Energy', 'Good'], ['Load', 'Light']].map(([label, value]) => <div key={label} className="rounded-xl bg-muted/60 p-2.5"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-sm font-medium">{value}</p></div>)}</div>
+                  {editingCheckin && viewer ? (
+                    <form onSubmit={saveCheckin} className="space-y-4">
+                      <label className="block text-xs font-medium">Sleep last night<input type="number" min="0" max="14" step="0.25" value={checkinDraft.sleepHours} onChange={(event) => setCheckinDraft((draft) => ({ ...draft, sleepHours: Number(event.target.value) }))} className="mt-1 h-9 w-full rounded-lg border bg-background px-3 text-sm" /><span className="mt-1 block font-normal text-muted-foreground">Hours</span></label>
+                      {([['Energy', 'energy'], ['Mood', 'mood'], ['Soreness', 'soreness']] as const).map(([label, key]) => <div key={key}><p className="mb-2 text-xs font-medium">{label}</p><div className="grid grid-cols-5 gap-1">{[1,2,3,4,5].map((score) => <button type="button" key={score} onClick={() => setCheckinDraft((draft) => ({ ...draft, [key]: score }))} className={`h-8 rounded-lg border text-xs font-medium ${checkinDraft[key] === score ? 'border-primary bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}>{score}</button>)}</div></div>)}
+                      <Button type="submit" className="w-full" disabled={savingCheckin}>{savingCheckin ? 'Saving check-in…' : 'Save morning check-in'}</Button>
+                    </form>
+                  ) : (
+                    <><div className="mb-5 flex items-end gap-3"><span className="text-4xl font-semibold tracking-tight">{readinessScore}</span><span className="pb-1 text-sm text-muted-foreground">/ 100</span></div>
+                    <Progress value={readinessScore} className="[&_[data-slot=progress-indicator]]:bg-emerald-500" />
+                    <div className="mt-5 grid grid-cols-3 gap-2 text-center">{[['Sleep', checkin ? `${Math.floor(checkin.sleepMinutes / 60)}h ${checkin.sleepMinutes % 60}m` : '7h 18m'], ['Energy', checkin ? `${checkin.energy}/5` : 'Good'], ['Load', recoveryDay ? 'Reduce' : 'Light']].map(([label, value]) => <div key={label} className="rounded-xl bg-muted/60 p-2.5"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-sm font-medium">{value}</p></div>)}</div></>
+                  )}
                 </CardContent>
               </Card>
 
