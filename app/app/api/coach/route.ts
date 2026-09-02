@@ -18,6 +18,19 @@ function taskTitleFromMessage(message: string) {
   return null;
 }
 
+function completedTaskTitleFromMessage(message: string) {
+  const patterns = [
+    /^(?:please\s+)?mark\s+(?:task\s+)?[:\-]?\s*(.+?)\s+as\s+(?:done|complete|completed)[.!]?$/i,
+    /^(?:please\s+)?mark\s+as\s+(?:done|complete|completed)\s+(?:task\s+)?[:\-]?\s*(.+?)[.!]?$/i,
+    /^(?:please\s+)?(?:complete|finish)\s+(?:task\s+)?[:\-]?\s*(.+?)[.!]?$/i,
+  ];
+  for (const pattern of patterns) {
+    const title = message.match(pattern)?.[1]?.trim().replace(/^['“”]|['“”]$/g, '').trim();
+    if (title) return title;
+  }
+  return null;
+}
+
 function readiness(checkin: Checkin | null) {
   if (!checkin || checkin.sleepMinutes == null || checkin.energy == null || checkin.soreness == null) return 70;
   return Math.round(Math.min(checkin.sleepMinutes / 480, 1) * 40 + (checkin.energy / 5) * 35 + ((6 - checkin.soreness) / 5) * 25);
@@ -144,6 +157,17 @@ export async function POST(request: Request) {
     const task = { id: crypto.randomUUID(), title: requestedTaskTitle, meta: 'Personal · 30 min', completed: 0, position: position?.next_position ?? 0 };
     await db.prepare('INSERT INTO tasks (id, user_id, title, meta, completed, position, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?, ?)').bind(task.id, user.userId, task.title, task.meta, task.position, now, now).run();
     return NextResponse.json({ reply: `Added “${task.title}” to today’s priorities.`, mode: 'action', action: { type: 'task_created', task } });
+  }
+  const requestedCompletedTitle = completedTaskTitleFromMessage(message);
+  if (requestedCompletedTitle) {
+    const taskResult = await db.prepare('SELECT id, title, meta, completed, position FROM tasks WHERE user_id = ? ORDER BY position, created_at').bind(user.userId).all<Task & { id: string; position: number }>();
+    const normalized = requestedCompletedTitle.toLocaleLowerCase();
+    const task = (taskResult.results ?? []).find((item) => item.id === requestedCompletedTitle || item.title.toLocaleLowerCase() === normalized)
+      ?? (taskResult.results ?? []).find((item) => item.title.toLocaleLowerCase().includes(normalized));
+    if (!task) return NextResponse.json({ reply: `I couldn’t find a task named “${requestedCompletedTitle}”. Try the exact task title.`, mode: 'action' });
+    await db.prepare('UPDATE tasks SET completed = 1, updated_at = ? WHERE id = ? AND user_id = ?').bind(Date.now(), task.id, user.userId).run();
+    const updatedTask = { ...task, completed: 1 };
+    return NextResponse.json({ reply: `Marked “${task.title}” as done.`, mode: 'action', action: { type: 'task_completed', task: updatedTask } });
   }
   const [taskResult, checkin] = await Promise.all([
     db.prepare('SELECT title, meta, completed FROM tasks WHERE user_id = ? ORDER BY position, created_at').bind(user.userId).all<Task>(),

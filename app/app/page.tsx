@@ -141,8 +141,9 @@ export default function Home() {
     setCoachMessages((items) => [...items, { role: 'user', text: message }]);
     setCoachInput(''); setCoachBusy(true); setCoachOpen(true);
     const response = await fetch('/api/coach', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message, date: new Date().toLocaleDateString('en-CA') }) });
-    const data = await response.json() as { reply?: string; error?: string; action?: { type: 'task_created'; task: Priority } };
+    const data = await response.json() as { reply?: string; error?: string; action?: { type: 'task_created' | 'task_completed'; task: Priority } };
     if (data.action?.type === 'task_created') setPriorities((items) => [...items, data.action!.task]);
+    if (data.action?.type === 'task_completed') setPriorities((items) => items.map((item) => item.id === data.action!.task.id ? data.action!.task : item));
     setCoachMessages((items) => [...items, { role: 'coach', text: data.reply ?? data.error ?? 'I could not create a recommendation just now.' }]);
     setCoachBusy(false);
   };
