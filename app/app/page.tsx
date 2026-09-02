@@ -14,6 +14,7 @@ type Viewer = { userId: string; displayName: string; email: string };
 type Checkin = { checkinDate: string; sleepMinutes: number; energy: number; mood: number; soreness: number };
 type PlanItem = { id: string; time: string; title: string; type: string; duration: number };
 type CoachMessage = { role: 'coach' | 'user'; text: string };
+type Section = 'Today' | 'Plan' | 'Goals' | 'Money' | 'Wellbeing' | 'Insights';
 
 const demoPriorities: Priority[] = [
   { id: 'demo-1', title: 'Finish Northstar product brief', meta: 'Deep work · 75 min', completed: false },
@@ -29,6 +30,7 @@ const timeline = [
 ];
 
 export default function Home() {
+  const [activeSection, setActiveSection] = useState<Section>('Today');
   const [priorities, setPriorities] = useState<Priority[]>(demoPriorities);
   const [viewer, setViewer] = useState<Viewer | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -161,8 +163,8 @@ export default function Home() {
             <div><p className="font-semibold tracking-tight">Northstar</p><p className="text-xs text-muted-foreground">Personal intelligence</p></div>
           </div>
           <nav className="mt-10 space-y-1" aria-label="Primary navigation">
-            {([['Today', SunMedium], ['Plan', CalendarDays], ['Goals', Target], ['Money', CircleDollarSign], ['Wellbeing', HeartPulse], ['Insights', Flame]] as const).map(([label, Icon], index) => (
-              <button key={label} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${index === 0 ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>
+            {([['Today', SunMedium], ['Plan', CalendarDays], ['Goals', Target], ['Money', CircleDollarSign], ['Wellbeing', HeartPulse], ['Insights', Flame]] as const).map(([label, Icon]) => (
+              <button key={label} onClick={() => setActiveSection(label)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${activeSection === label ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>
                 <Icon className="size-4" />{label}
               </button>
             ))}
@@ -178,7 +180,7 @@ export default function Home() {
           <header className="mb-8 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Button variant="outline" size="icon" className="lg:hidden" aria-label="Open menu"><Menu /></Button>
-              <div><p className="text-sm text-muted-foreground">Wednesday, 2 September</p><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Good morning, {firstName}</h1></div>
+              <div><p className="text-sm text-muted-foreground">Wednesday, 2 September</p><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{activeSection === 'Today' ? `Good morning, ${firstName}` : activeSection}</h1></div>
             </div>
             <div className="flex items-center gap-2">
               <Button onClick={() => setCoachOpen(true)} variant="outline" size="icon" aria-label="Open assistant chat"><MessageCircle /></Button>
@@ -190,7 +192,7 @@ export default function Home() {
             </div>
           </header>
 
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(310px,.75fr)]">
+          {activeSection === 'Today' ? <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(310px,.75fr)]">
             <div className="space-y-5">
               <Card className="overflow-visible border-0 bg-primary text-primary-foreground ring-0 shadow-[0_24px_70px_-32px_rgba(22,81,63,.7)]">
                 <CardHeader className="pb-0">
@@ -276,7 +278,19 @@ export default function Home() {
                 </CardContent>
               </Card>
             </div>
-          </div>
+          </div> : (
+            <div className="mx-auto max-w-5xl space-y-5">
+              {activeSection === 'Plan' && <Card><CardHeader><CardTitle>Your daily plan</CardTitle><CardDescription>{planItems.length ? `${planItems.length} saved blocks based on your priorities and readiness.` : 'Generate a focused schedule from your unfinished priorities.'}</CardDescription><CardAction><Button onClick={generatePlan} disabled={!viewer || generatingPlan}>{generatingPlan ? 'Planning…' : planItems.length ? 'Replan today' : 'Generate plan'}</Button></CardAction></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2">{(planItems.length ? planItems : timeline).map((item) => <div key={`${item.time}-${item.title}`} className="flex items-center gap-4 rounded-xl border bg-background p-4"><span className="w-12 text-sm tabular-nums text-muted-foreground">{item.time}</span><span className="size-2 rounded-full bg-emerald-500"/><div><p className="font-medium">{item.title}</p><p className="text-xs text-muted-foreground">{item.type}{'duration' in item ? ` · ${item.duration} min` : ''}</p></div></div>)}</CardContent></Card>}
+
+              {activeSection === 'Goals' && <Card><CardHeader><CardTitle>Goals & priorities</CardTitle><CardDescription>{completedCount} of {priorities.length} complete. Use the coach to add, rename, delete, reopen, or complete anything here.</CardDescription><CardAction><Button onClick={() => { setActiveSection('Today'); setAddingTask(true); }}><Plus/>Add priority</Button></CardAction></CardHeader><CardContent className="space-y-2">{priorities.map((priority) => { const done=Boolean(priority.completed); return <button key={priority.id} onClick={() => togglePriority(priority.id)} className="flex w-full items-center gap-3 rounded-xl border p-4 text-left hover:bg-muted/50"><span className={`grid size-6 place-items-center rounded-full border ${done?'border-primary bg-primary text-primary-foreground':''}`}>{done&&<Check className="size-3"/>}</span><span><span className={done?'line-through text-muted-foreground':'font-medium'}>{priority.title}</span><span className="ml-3 text-xs text-muted-foreground">{priority.meta}</span></span></button>})}</CardContent></Card>}
+
+              {activeSection === 'Money' && <><Card><CardHeader><CardTitle>Money</CardTitle><CardDescription>Financial connections are not enabled yet.</CardDescription></CardHeader><CardContent><div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-950"><p className="font-medium">Demo data only</p><p className="mt-2 text-sm">The $684 safe-to-spend amount and dining trend are illustrative. Northstar will not create or modify financial records until a secure provider is connected.</p></div></CardContent></Card><Card><CardHeader><CardTitle>Next connection</CardTitle><CardDescription>We can add manual budgeting first, then connect a supported financial provider later.</CardDescription></CardHeader></Card></>}
+
+              {activeSection === 'Wellbeing' && <Card><CardHeader><CardTitle>Wellbeing & recovery</CardTitle><CardDescription>{checkin?'Today’s saved check-in powers your readiness and workload advice.':'Complete a morning check-in to personalize recovery guidance.'}</CardDescription><CardAction><Button onClick={() => { setActiveSection('Today'); setEditingCheckin(true); }}>{checkin?'Update check-in':'Start check-in'}</Button></CardAction></CardHeader><CardContent><div className="grid gap-4 sm:grid-cols-4"><div className="rounded-2xl bg-muted p-5"><p className="text-sm text-muted-foreground">Readiness</p><p className="mt-2 text-3xl font-semibold">{readinessScore}</p></div><div className="rounded-2xl bg-muted p-5"><p className="text-sm text-muted-foreground">Sleep</p><p className="mt-2 text-xl font-semibold">{checkin?`${Math.floor(checkin.sleepMinutes/60)}h ${checkin.sleepMinutes%60}m`:'—'}</p></div><div className="rounded-2xl bg-muted p-5"><p className="text-sm text-muted-foreground">Energy</p><p className="mt-2 text-xl font-semibold">{checkin?`${checkin.energy}/5`:'—'}</p></div><div className="rounded-2xl bg-muted p-5"><p className="text-sm text-muted-foreground">Recommended load</p><p className="mt-2 text-xl font-semibold">{recoveryDay?'Reduce':'Normal'}</p></div></div></CardContent></Card>}
+
+              {activeSection === 'Insights' && <><Card><CardHeader><CardTitle>Personal insights</CardTitle><CardDescription>A live snapshot from today’s private Northstar data.</CardDescription></CardHeader><CardContent className="grid gap-4 sm:grid-cols-3"><div className="rounded-2xl border p-5"><p className="text-sm text-muted-foreground">Completion</p><p className="mt-2 text-3xl font-semibold">{priorities.length?Math.round(completedCount/priorities.length*100):0}%</p><p className="mt-1 text-xs text-muted-foreground">{completedCount} of {priorities.length} priorities</p></div><div className="rounded-2xl border p-5"><p className="text-sm text-muted-foreground">Readiness</p><p className="mt-2 text-3xl font-semibold">{readinessScore}</p><p className="mt-1 text-xs text-muted-foreground">{recoveryDay?'Recovery-aware day':'Balanced workload'}</p></div><div className="rounded-2xl border p-5"><p className="text-sm text-muted-foreground">Plan coverage</p><p className="mt-2 text-3xl font-semibold">{planItems.length}</p><p className="mt-1 text-xs text-muted-foreground">saved time blocks</p></div></CardContent></Card><Card><CardHeader><CardTitle>Ask for a daily summary</CardTitle><CardDescription>The coach can summarize progress, readiness, schedule, and your evening review from real saved records.</CardDescription><CardAction><Button onClick={() => {setCoachOpen(true); void askCoach(undefined,'Summarize my day');}}>Summarize now</Button></CardAction></CardHeader></Card></>}
+            </div>
+          )}
 
           <div className="sticky bottom-4 mx-auto mt-7 flex max-w-2xl items-center gap-3 rounded-2xl border border-border bg-card/95 p-2.5 shadow-[0_18px_50px_-25px_rgba(23,50,42,.5)] backdrop-blur">
             <Button onClick={() => setListening((active) => !active)} size="icon-lg" className={`rounded-xl ${listening ? 'animate-pulse bg-red-500 hover:bg-red-500/90' : ''}`} aria-label={listening ? 'Stop voice conversation' : 'Start voice conversation'}><Mic /></Button>
