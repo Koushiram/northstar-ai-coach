@@ -141,9 +141,13 @@ export default function Home() {
     setCoachMessages((items) => [...items, { role: 'user', text: message }]);
     setCoachInput(''); setCoachBusy(true); setCoachOpen(true);
     const response = await fetch('/api/coach', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message, date: new Date().toLocaleDateString('en-CA') }) });
-    const data = await response.json() as { reply?: string; error?: string; action?: { type: 'task_created' | 'task_completed'; task: Priority } };
+    const data = await response.json() as { reply?: string; error?: string; action?: { type: 'task_created' | 'task_completed' | 'task_updated' | 'task_deleted' | 'checkin_saved' | 'review_saved' | 'plan_saved' | 'summary_ready'; task?: Priority; checkin?: Checkin; plan?: { items: PlanItem[]; readinessScore: number } } };
     if (data.action?.type === 'task_created') setPriorities((items) => [...items, data.action!.task]);
-    if (data.action?.type === 'task_completed') setPriorities((items) => items.map((item) => item.id === data.action!.task.id ? data.action!.task : item));
+    if ((data.action?.type === 'task_completed' || data.action?.type === 'task_updated') && data.action.task) setPriorities((items) => items.map((item) => item.id === data.action!.task!.id ? data.action!.task! : item));
+    if (data.action?.type === 'task_deleted' && data.action.task) setPriorities((items) => items.filter((item) => item.id !== data.action!.task!.id));
+    if (data.action?.type === 'checkin_saved' && data.action.checkin) { setCheckin(data.action.checkin); setEditingCheckin(false); }
+    if (data.action?.type === 'review_saved') setReviewSaved(true);
+    if (data.action?.type === 'plan_saved' && data.action.plan) setPlanItems(data.action.plan.items);
     setCoachMessages((items) => [...items, { role: 'coach', text: data.reply ?? data.error ?? 'I could not create a recommendation just now.' }]);
     setCoachBusy(false);
   };
