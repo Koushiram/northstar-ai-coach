@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { env } from 'cloudflare:workers';
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { ensureSchema, getD1 } from '@/db';
 
@@ -40,6 +41,38 @@ function coachReply(message: string, tasks: Task[], checkin: Checkin | null) {
   return `I’m using today’s priorities and readiness to coach you. Ask “What should I do next?”, “Replan my afternoon”, or “Should I reduce my workout?”`;
 }
 
+async function generateModelReply(message: string, tasks: Task[], checkin: Checkin | null, fallback: string) {
+  const apiKey = env.OPENAI_API_KEY;
+  if (!apiKey) return { reply: fallback, mode: 'guided' as const };
+  const openTasks = tasks.filter((task) => !task.completed).slice(0, 8);
+  const context = {
+    readinessScore: readiness(checkin),
+    wellbeing: checkin,
+    priorities: openTasks.map(({ title, meta }) => ({ title, meta })),
+    completedToday: tasks.length - openTasks.length,
+  };
+  try {
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: env.OPENAI_MODEL || 'gpt-5.4-mini',
+        store: false,
+        max_output_tokens: 240,
+        instructions: 'You are Northstar, a calm personal coach. Use only the supplied daily context. Give one clear recommendation, a short reason, and one concrete next action. Never invent calendar, financial, health, or task data. Do not diagnose or provide medical treatment. Be concise and supportive.',
+        input: `Daily context:\n${JSON.stringify(context)}\n\nUser: ${message}`,
+      }),
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!response.ok) return { reply: fallback, mode: 'guided' as const };
+    const result = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ type?: string; text?: string }> }> };
+    const reply = result.output_text?.trim() || result.output?.flatMap((item) => item.content ?? []).find((item) => item.type === 'output_text')?.text?.trim();
+    return reply ? { reply, mode: 'ai' as const } : { reply: fallback, mode: 'guided' as const };
+  } catch {
+    return { reply: fallback, mode: 'guided' as const };
+  }
+}
+
 export async function POST(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return NextResponse.json({ error: 'Sign in required' }, { status: 401 });
@@ -54,5 +87,7 @@ export async function POST(request: Request) {
     db.prepare('SELECT title, meta, completed FROM tasks WHERE user_id = ? ORDER BY position, created_at').bind(user.userId).all<Task>(),
     db.prepare('SELECT sleep_minutes AS sleepMinutes, energy, mood, soreness FROM wellbeing_checkins WHERE user_id = ? AND checkin_date = ?').bind(user.userId, date).first<Checkin>(),
   ]);
-  return NextResponse.json({ reply: coachReply(message, taskResult.results ?? [], checkin ?? null) });
+  const tasks = taskResult.results ?? [];
+  const result = await generateModelReply(message, tasks, checkin ?? null, coachReply(message, tasks, checkin ?? null));
+  return NextResponse.json(result);
 }
