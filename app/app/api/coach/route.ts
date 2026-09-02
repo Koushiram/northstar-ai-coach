@@ -6,6 +6,18 @@ import { ensureSchema, getD1 } from '@/db';
 type Task = { title: string; meta: string; completed: number };
 type Checkin = { sleepMinutes: number | null; energy: number | null; mood: number | null; soreness: number | null };
 
+function taskTitleFromMessage(message: string) {
+  const patterns = [
+    /^(?:please\s+)?(?:add|create|remember)\s+(?:a\s+)?(?:task|priority)(?:\s+(?:to|for))?\s*[:\-]?\s*(.+)$/i,
+    /^(?:please\s+)?add\s+(.+?)\s+to\s+my\s+(?:tasks|priorities)$/i,
+  ];
+  for (const pattern of patterns) {
+    const title = message.match(pattern)?.[1]?.trim().replace(/[.!]+$/, '').trim();
+    if (title) return title;
+  }
+  return null;
+}
+
 function readiness(checkin: Checkin | null) {
   if (!checkin || checkin.sleepMinutes == null || checkin.energy == null || checkin.soreness == null) return 70;
   return Math.round(Math.min(checkin.sleepMinutes / 480, 1) * 40 + (checkin.energy / 5) * 35 + ((6 - checkin.soreness) / 5) * 25);
@@ -124,6 +136,15 @@ export async function POST(request: Request) {
 
   const db = getD1();
   await ensureSchema(db);
+  const requestedTaskTitle = taskTitleFromMessage(message);
+  if (requestedTaskTitle) {
+    if (requestedTaskTitle.length > 140) return NextResponse.json({ error: 'Keep the task title under 140 characters.' }, { status: 400 });
+    const now = Date.now();
+    const position = await db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM tasks WHERE user_id = ?').bind(user.userId).first<{ next_position: number }>();
+    const task = { id: crypto.randomUUID(), title: requestedTaskTitle, meta: 'Personal · 30 min', completed: 0, position: position?.next_position ?? 0 };
+    await db.prepare('INSERT INTO tasks (id, user_id, title, meta, completed, position, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?, ?)').bind(task.id, user.userId, task.title, task.meta, task.position, now, now).run();
+    return NextResponse.json({ reply: `Added “${task.title}” to today’s priorities.`, mode: 'action', action: { type: 'task_created', task } });
+  }
   const [taskResult, checkin] = await Promise.all([
     db.prepare('SELECT title, meta, completed FROM tasks WHERE user_id = ? ORDER BY position, created_at').bind(user.userId).all<Task>(),
     db.prepare('SELECT sleep_minutes AS sleepMinutes, energy, mood, soreness FROM wellbeing_checkins WHERE user_id = ? AND checkin_date = ?').bind(user.userId, date).first<Checkin>(),
