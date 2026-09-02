@@ -42,8 +42,8 @@ function coachReply(message: string, tasks: Task[], checkin: Checkin | null) {
 }
 
 async function generateModelReply(message: string, tasks: Task[], checkin: Checkin | null, fallback: string) {
-  const apiKey = env.OPENAI_API_KEY;
-  if (!apiKey) return { reply: fallback, mode: 'guided' as const };
+  const primaryKey = env.OPENAI_API_KEY;
+  if (!primaryKey) return { reply: fallback, mode: 'guided' as const };
   const openTasks = tasks.filter((task) => !task.completed).slice(0, 8);
   const context = {
     readinessScore: readiness(checkin),
@@ -51,7 +51,7 @@ async function generateModelReply(message: string, tasks: Task[], checkin: Check
     priorities: openTasks.map(({ title, meta }) => ({ title, meta })),
     completedToday: tasks.length - openTasks.length,
   };
-  try {
+  const requestModel = async (apiKey: string) => {
     const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
@@ -64,11 +64,22 @@ async function generateModelReply(message: string, tasks: Task[], checkin: Check
       }),
       signal: AbortSignal.timeout(12_000),
     });
-    if (!response.ok) return { reply: fallback, mode: 'guided' as const };
+    if (!response.ok) return { reply: null, retryable: [408, 429, 500, 502, 503, 504].includes(response.status) };
     const result = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ type?: string; text?: string }> }> };
     const reply = result.output_text?.trim() || result.output?.flatMap((item) => item.content ?? []).find((item) => item.type === 'output_text')?.text?.trim();
-    return reply ? { reply, mode: 'ai' as const } : { reply: fallback, mode: 'guided' as const };
+    return { reply: reply || null, retryable: !reply };
+  };
+  try {
+    let result = await requestModel(primaryKey);
+    if (!result.reply && result.retryable && env.OPENAI_FALLBACK_API_KEY) result = await requestModel(env.OPENAI_FALLBACK_API_KEY);
+    return result.reply ? { reply: result.reply, mode: 'ai' as const } : { reply: fallback, mode: 'guided' as const };
   } catch {
+    if (env.OPENAI_FALLBACK_API_KEY) {
+      try {
+        const result = await requestModel(env.OPENAI_FALLBACK_API_KEY);
+        if (result.reply) return { reply: result.reply, mode: 'ai' as const };
+      } catch { /* Fall through to the private guided coach. */ }
+    }
     return { reply: fallback, mode: 'guided' as const };
   }
 }
