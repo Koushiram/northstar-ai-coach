@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
-import { ArrowRight, CalendarDays, Check, ChevronRight, CircleDollarSign, Clock3, Flame, HeartPulse, LogIn, Menu, MessageCircle, Mic, Moon, MoreHorizontal, Plus, Sparkles, SunMedium, Target, X } from 'lucide-react';
+import { ArrowRight, CalendarDays, Check, ChevronRight, CircleDollarSign, Clock3, Flame, HeartPulse, LogIn, Menu, MessageCircle, Mic, Moon, Plus, Send, Sparkles, SunMedium, Target, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +13,7 @@ type Priority = { id: string; title: string; meta: string; completed: boolean | 
 type Viewer = { userId: string; displayName: string; email: string };
 type Checkin = { checkinDate: string; sleepMinutes: number; energy: number; mood: number; soreness: number };
 type PlanItem = { id: string; time: string; title: string; type: string; duration: number };
+type CoachMessage = { role: 'coach' | 'user'; text: string };
 
 const demoPriorities: Priority[] = [
   { id: 'demo-1', title: 'Finish Northstar product brief', meta: 'Deep work · 75 min', completed: false },
@@ -45,6 +46,10 @@ export default function Home() {
   const [reviewSaved, setReviewSaved] = useState(false);
   const [focusActive, setFocusActive] = useState(false);
   const [listening, setListening] = useState(false);
+  const [coachOpen, setCoachOpen] = useState(false);
+  const [coachInput, setCoachInput] = useState('');
+  const [coachBusy, setCoachBusy] = useState(false);
+  const [coachMessages, setCoachMessages] = useState<CoachMessage[]>([{ role: 'coach', text: 'I’m ready. Ask what to do next, request a replan, or check whether today should be a recovery day.' }]);
   const [planAdjusted, setPlanAdjusted] = useState(false);
   useEffect(() => {
     const load = async () => {
@@ -128,6 +133,19 @@ export default function Home() {
     if (response.ok) { setReviewSaved(true); setReviewOpen(false); }
   };
 
+  const askCoach = async (event?: FormEvent, suggestedMessage?: string) => {
+    event?.preventDefault();
+    const message = (suggestedMessage ?? coachInput).trim();
+    if (!message || coachBusy) return;
+    if (!viewer) { setCoachOpen(true); return; }
+    setCoachMessages((items) => [...items, { role: 'user', text: message }]);
+    setCoachInput(''); setCoachBusy(true); setCoachOpen(true);
+    const response = await fetch('/api/coach', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message, date: new Date().toLocaleDateString('en-CA') }) });
+    const data = await response.json() as { reply?: string; error?: string };
+    setCoachMessages((items) => [...items, { role: 'coach', text: data.reply ?? data.error ?? 'I could not create a recommendation just now.' }]);
+    setCoachBusy(false);
+  };
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex min-h-screen max-w-[1500px]">
@@ -157,7 +175,7 @@ export default function Home() {
               <div><p className="text-sm text-muted-foreground">Wednesday, 2 September</p><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Good morning, {firstName}</h1></div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" aria-label="Open assistant chat"><MessageCircle /></Button>
+              <Button onClick={() => setCoachOpen(true)} variant="outline" size="icon" aria-label="Open assistant chat"><MessageCircle /></Button>
               {authReady && !viewer ? (
                 <a href="/signin-with-chatgpt?return_to=%2F" target="_top" className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground"><LogIn className="size-4" /> Sign in</a>
               ) : (
@@ -256,7 +274,7 @@ export default function Home() {
 
           <div className="sticky bottom-4 mx-auto mt-7 flex max-w-2xl items-center gap-3 rounded-2xl border border-border bg-card/95 p-2.5 shadow-[0_18px_50px_-25px_rgba(23,50,42,.5)] backdrop-blur">
             <Button onClick={() => setListening((active) => !active)} size="icon-lg" className={`rounded-xl ${listening ? 'animate-pulse bg-red-500 hover:bg-red-500/90' : ''}`} aria-label={listening ? 'Stop voice conversation' : 'Start voice conversation'}><Mic /></Button>
-            <button className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-medium">Ask Northstar anything…</span><span className="block truncate text-xs text-muted-foreground">Try “Replan my afternoon” or “Log a $12 lunch”</span></button>
+            <button onClick={() => setCoachOpen(true)} className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-medium">Ask Northstar anything…</span><span className="block truncate text-xs text-muted-foreground">Try “What should I do next?” or “Replan my afternoon”</span></button>
             <div className={`hidden items-center gap-1 text-xs sm:flex ${listening ? 'font-medium text-red-600' : 'text-muted-foreground'}`}><Clock3 className="size-3.5" /> {listening ? 'Listening…' : 'Ready'}</div>
           </div>
 
@@ -270,6 +288,21 @@ export default function Home() {
                   <div><p className="mb-2 text-xs font-medium">Evening energy</p><div className="grid grid-cols-5 gap-1">{[1,2,3,4,5].map((score) => <button type="button" key={score} onClick={() => setReviewDraft((d) => ({...d, energy:score}))} className={`h-9 rounded-lg border text-sm ${reviewDraft.energy===score?'bg-primary text-primary-foreground':'bg-background'}`}>{score}</button>)}</div></div>
                   <Button type="submit" className="w-full">Save review & close the day</Button>
                 </form></CardContent>
+              </Card>
+            </div>
+          )}
+
+          {coachOpen && (
+            <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/20 p-3 backdrop-blur-sm sm:items-center">
+              <Card className="flex max-h-[82vh] w-full max-w-xl flex-col overflow-hidden shadow-2xl">
+                <CardHeader className="border-b"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground"><Sparkles className="size-4" /></span><div><CardTitle>Northstar coach</CardTitle><CardDescription>Personal guidance from today’s real context</CardDescription></div></div><CardAction><Button onClick={() => setCoachOpen(false)} variant="ghost" size="icon" aria-label="Close coach"><X /></Button></CardAction></CardHeader>
+                <CardContent className="flex min-h-0 flex-1 flex-col p-0">
+                  {!viewer ? <div className="m-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950"><p className="font-medium">Sign in for private, personalized coaching</p><p className="mt-2 text-sm text-emerald-800">Northstar uses only your saved priorities and wellbeing check-in to guide the day.</p><a href="/signin-with-chatgpt?return_to=%2F" target="_top" className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"><LogIn className="size-4" />Continue with ChatGPT</a></div> : <>
+                    <div className="flex-1 space-y-3 overflow-y-auto p-5">{coachMessages.map((message, index) => <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`}>{message.text}</div></div>)}{coachBusy && <div className="w-fit rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">Thinking through your day…</div>}</div>
+                    <div className="flex flex-wrap gap-2 border-t px-4 py-3">{['What should I do next?', 'Replan my afternoon', 'Should I reduce my workout?'].map((prompt) => <button key={prompt} onClick={() => void askCoach(undefined, prompt)} className="rounded-full border bg-background px-3 py-1.5 text-xs hover:bg-muted">{prompt}</button>)}</div>
+                    <form onSubmit={askCoach} className="flex gap-2 border-t p-4"><Input value={coachInput} onChange={(event) => setCoachInput(event.target.value)} placeholder="Ask about your day…" maxLength={500} aria-label="Message Northstar coach" /><Button type="submit" size="icon" disabled={!coachInput.trim() || coachBusy} aria-label="Send message"><Send /></Button></form>
+                  </>}
+                </CardContent>
               </Card>
             </div>
           )}
