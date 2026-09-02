@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getChatGPTUser } from '@/app/chatgpt-auth';
-import { getD1 } from '@/db';
+import { ensureSchema, getD1 } from '@/db';
 
 type CheckinInput = {
   checkinDate?: string;
@@ -19,7 +19,8 @@ export async function GET(request: Request) {
   if (!user) return NextResponse.json({ error: 'Sign in required' }, { status: 401 });
   const date = new URL(request.url).searchParams.get('date');
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: 'A valid date is required.' }, { status: 400 });
-  const checkin = await getD1().prepare(
+  const db = getD1(); await ensureSchema(db);
+  const checkin = await db.prepare(
     'SELECT checkin_date AS checkinDate, sleep_minutes AS sleepMinutes, energy, mood, soreness FROM wellbeing_checkins WHERE user_id = ? AND checkin_date = ?',
   ).bind(user.userId, date).first();
   return NextResponse.json({ checkin });
@@ -34,7 +35,8 @@ export async function PUT(request: Request) {
   }
   const now = Date.now();
   const id = crypto.randomUUID();
-  await getD1().prepare(`
+  const db = getD1(); await ensureSchema(db);
+  await db.prepare(`
     INSERT INTO wellbeing_checkins (id, user_id, checkin_date, sleep_minutes, energy, mood, soreness, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(user_id, checkin_date) DO UPDATE SET
@@ -46,4 +48,3 @@ export async function PUT(request: Request) {
   `).bind(id, user.userId, body.checkinDate, body.sleepMinutes, body.energy, body.mood, body.soreness, now, now).run();
   return NextResponse.json({ checkin: body });
 }
-
