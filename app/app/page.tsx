@@ -1,37 +1,176 @@
 'use client';
 
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { ArrowRight, CalendarDays, Check, ChevronRight, CircleDollarSign, Clock3, Flame, HeartPulse, LogIn, Menu, MessageCircle, Mic, Moon, Pause, Play, Plus, Send, Sparkles, SunMedium, Target, X } from 'lucide-react';
+import {
+  ArrowRight,
+  CalendarDays,
+  Check,
+  ChevronRight,
+  CircleDollarSign,
+  Clock3,
+  Flame,
+  HeartPulse,
+  LogIn,
+  Menu,
+  MessageCircle,
+  Mic,
+  Moon,
+  Pause,
+  Play,
+  Plus,
+  Send,
+  Sparkles,
+  SunMedium,
+  Target,
+  X,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { LifeWorkspace } from '@/components/life-workspace';
 
-type Priority = { id: string; title: string; meta: string; completed: boolean | number; position?: number };
+type Priority = {
+  id: string;
+  title: string;
+  meta: string;
+  completed: boolean | number;
+  position?: number;
+};
 type Viewer = { userId: string; displayName: string; email: string };
-type Checkin = { checkinDate: string; sleepMinutes: number; energy: number; mood: number; soreness: number };
-type PlanItem = { id: string; time: string; title: string; type: string; duration: number };
+type Checkin = {
+  checkinDate: string;
+  sleepMinutes: number;
+  energy: number;
+  mood: number;
+  soreness: number;
+};
+type PlanItem = {
+  id: string;
+  time: string;
+  title: string;
+  type: string;
+  duration: number;
+};
 type CoachMessage = { role: 'coach' | 'user'; text: string };
 type Section = 'Today' | 'Plan' | 'Goals' | 'Money' | 'Wellbeing' | 'Insights';
-const cleanCoachText = (text:string) => {const clean=text.replace(/\*+/g,'').replace(/^Recommendation:\s*/i,'').trim();if(clean.length<130||clean.includes('\n•'))return clean;const points=clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map(x=>x.trim()).filter(Boolean)??[clean];return points.length>1?points.map(x=>`• ${x}`).join('\n'):clean};
-type MoneyAccount = { balanceCents: number; currency: string; monthlyBudgetCents: number };
-type Expense = { id: string; amountCents: number; category: string; note: string; spentOn: string };
-type Goal = { id: string; title: string; area: string; targetValue: number; currentValue: number; unit: string; targetDate?: string; status: string };
-type HealthLog = { id: string; logDate: string; kind: 'workout'|'meal'; title: string; detail: string; durationMinutes?: number; calories?: number; proteinGrams?: number };
+const cleanCoachText = (text: string) => {
+  const clean = text
+    .replace(/\*+/g, '')
+    .replace(/^Recommendation:\s*/i, '')
+    .trim();
+  if (clean.length < 130 || clean.includes('\n•')) return clean;
+  const points = clean
+    .match(/[^.!?]+[.!?]+|[^.!?]+$/g)
+    ?.map((x) => x.trim())
+    .filter(Boolean) ?? [clean];
+  return points.length > 1 ? points.map((x) => `• ${x}`).join('\n') : clean;
+};
+function WheelSelect({
+  value,
+  onChange,
+  options,
+  suffix,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  options: number[];
+  suffix: string;
+}) {
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-b from-muted/50 via-background to-muted/50 shadow-inner">
+      <select
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="h-14 w-full appearance-none bg-transparent px-4 text-center text-lg font-semibold outline-none"
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option} {suffix}
+          </option>
+        ))}
+      </select>
+      <div className="pointer-events-none absolute inset-y-2 left-2 right-2 rounded-xl border border-primary/10" />
+    </div>
+  );
+}
+type MoneyAccount = {
+  balanceCents: number;
+  currency: string;
+  monthlyBudgetCents: number;
+};
+type Expense = {
+  id: string;
+  amountCents: number;
+  category: string;
+  note: string;
+  spentOn: string;
+};
+type Goal = {
+  id: string;
+  title: string;
+  area: string;
+  targetValue: number;
+  currentValue: number;
+  unit: string;
+  targetDate?: string;
+  status: string;
+};
+type HealthLog = {
+  id: string;
+  logDate: string;
+  kind: 'workout' | 'meal';
+  title: string;
+  detail: string;
+  durationMinutes?: number;
+  calories?: number;
+  proteinGrams?: number;
+};
 
 const demoPriorities: Priority[] = [
-  { id: 'demo-1', title: 'Finish Northstar product brief', meta: 'Deep work · 75 min', completed: false },
-  { id: 'demo-2', title: 'Review monthly spending', meta: 'Finance · 25 min', completed: false },
-  { id: 'demo-3', title: 'Evening strength session', meta: 'Health · 45 min', completed: false },
+  {
+    id: 'demo-1',
+    title: 'Finish Northstar product brief',
+    meta: 'Deep work · 75 min',
+    completed: false,
+  },
+  {
+    id: 'demo-2',
+    title: 'Review monthly spending',
+    meta: 'Finance · 25 min',
+    completed: false,
+  },
+  {
+    id: 'demo-3',
+    title: 'Evening strength session',
+    meta: 'Health · 45 min',
+    completed: false,
+  },
 ];
 
 const timeline = [
-  { time: '9:30', title: 'Northstar product brief', type: 'Focus', tone: 'focus' },
+  {
+    time: '9:30',
+    title: 'Northstar product brief',
+    type: 'Focus',
+    tone: 'focus',
+  },
   { time: '11:00', title: 'Team check-in', type: 'Calendar', tone: 'meeting' },
-  { time: '12:30', title: 'Lunch & short walk', type: 'Recovery', tone: 'rest' },
+  {
+    time: '12:30',
+    title: 'Lunch & short walk',
+    type: 'Recovery',
+    tone: 'rest',
+  },
   { time: '2:00', title: 'Open focus block', type: 'Flexible', tone: 'open' },
 ];
 
@@ -46,75 +185,167 @@ export default function Home() {
   const [checkin, setCheckin] = useState<Checkin | null>(null);
   const [editingCheckin, setEditingCheckin] = useState(false);
   const [savingCheckin, setSavingCheckin] = useState(false);
-  const [checkinDraft, setCheckinDraft] = useState({ sleepHours: 7.5, energy: 4, mood: 4, soreness: 2 });
+  const [checkinDraft, setCheckinDraft] = useState({
+    sleepHours: 7.5,
+    energy: 4,
+    mood: 4,
+    soreness: 2,
+  });
   const [planItems, setPlanItems] = useState<PlanItem[]>([]);
   const [generatingPlan, setGeneratingPlan] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [reviewDraft, setReviewDraft] = useState({ win: '', reflection: '', energy: 3 });
+  const [reviewDraft, setReviewDraft] = useState({
+    win: '',
+    reflection: '',
+    energy: 3,
+  });
   const [reviewSaved, setReviewSaved] = useState(false);
   const [focusActive, setFocusActive] = useState(false);
   const [focusRunning, setFocusRunning] = useState(false);
-  const [focusRemaining, setFocusRemaining] = useState(75*60);
+  const [focusRemaining, setFocusRemaining] = useState(75 * 60);
   const [listening, setListening] = useState(false);
   const [coachOpen, setCoachOpen] = useState(false);
   const [coachInput, setCoachInput] = useState('');
   const [coachBusy, setCoachBusy] = useState(false);
-  const [coachMessages, setCoachMessages] = useState<CoachMessage[]>([{ role: 'coach', text: 'I’m ready. Ask what to do next, request a replan, or check whether today should be a recovery day.' }]);
+  const [coachMessages, setCoachMessages] = useState<CoachMessage[]>([
+    {
+      role: 'coach',
+      text: 'I’m ready. Ask what to do next, request a replan, or check whether today should be a recovery day.',
+    },
+  ]);
   const [planAdjusted, setPlanAdjusted] = useState(false);
   const voiceReplyRef = useRef(false);
-  const [voiceError,setVoiceError]=useState('');
-  const [account, setAccount] = useState<MoneyAccount>({balanceCents:0,currency:'AUD',monthlyBudgetCents:0});
+  const voiceRecognitionRef = useRef<{
+    stop?: () => void;
+    abort?: () => void;
+  } | null>(null);
+  const [voiceError, setVoiceError] = useState('');
+  const [account, setAccount] = useState<MoneyAccount>({
+    balanceCents: 0,
+    currency: 'AUD',
+    monthlyBudgetCents: 0,
+  });
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [healthLogs, setHealthLogs] = useState<HealthLog[]>([]);
   const [balanceDraft, setBalanceDraft] = useState('');
-  const [expenseDraft, setExpenseDraft] = useState({amount:'',category:'Food',note:''});
-  const [goalDraft, setGoalDraft] = useState({title:'',area:'Fitness',targetValue:'100',unit:'%'});
-  const [healthDraft, setHealthDraft] = useState({kind:'workout' as 'workout'|'meal',title:'',detail:'',durationMinutes:'45',calories:'',proteinGrams:''});
+  const [expenseDraft, setExpenseDraft] = useState({
+    amount: '',
+    category: 'Food',
+    note: '',
+  });
+  const [goalDraft, setGoalDraft] = useState({
+    title: '',
+    area: 'Fitness',
+    targetValue: '100',
+    unit: '%',
+  });
+  const [healthDraft, setHealthDraft] = useState({
+    kind: 'workout' as 'workout' | 'meal',
+    title: '',
+    detail: '',
+    durationMinutes: '45',
+    calories: '',
+    proteinGrams: '',
+  });
 
   const refreshLife = async () => {
-    const response=await fetch('/api/life',{cache:'no-store'}); if(!response.ok)return;
-    const data=await response.json() as {account:MoneyAccount;expenses:Expense[];goals:Goal[];healthLogs:HealthLog[]};
-    setAccount(data.account);setExpenses(data.expenses);setGoals(data.goals);setHealthLogs(data.healthLogs);
+    const response = await fetch('/api/life', { cache: 'no-store' });
+    if (!response.ok) return;
+    const data = (await response.json()) as {
+      account: MoneyAccount;
+      expenses: Expense[];
+      goals: Goal[];
+      healthLogs: HealthLog[];
+    };
+    setAccount(data.account);
+    setExpenses(data.expenses);
+    setGoals(data.goals);
+    setHealthLogs(data.healthLogs);
   };
   useEffect(() => {
     const load = async () => {
       const meResponse = await fetch('/api/me', { cache: 'no-store' });
-      const me = await meResponse.json() as { user: Viewer | null };
+      const me = (await meResponse.json()) as { user: Viewer | null };
       setViewer(me.user);
       setAuthReady(true);
       if (!me.user) return;
-      await fetch('/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ seed: true }) });
+      await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ seed: true }),
+      });
       const taskResponse = await fetch('/api/tasks', { cache: 'no-store' });
       if (taskResponse.ok) {
-        const data = await taskResponse.json() as { tasks: Priority[] };
+        const data = (await taskResponse.json()) as { tasks: Priority[] };
         setPriorities(data.tasks);
       }
       const localDate = new Date().toLocaleDateString('en-CA');
-      const checkinResponse = await fetch(`/api/checkins?date=${localDate}`, { cache: 'no-store' });
+      const checkinResponse = await fetch(`/api/checkins?date=${localDate}`, {
+        cache: 'no-store',
+      });
       if (checkinResponse.ok) {
-        const data = await checkinResponse.json() as { checkin: Checkin | null };
+        const data = (await checkinResponse.json()) as {
+          checkin: Checkin | null;
+        };
         if (data.checkin) {
           setCheckin(data.checkin);
-          setCheckinDraft({ sleepHours: data.checkin.sleepMinutes / 60, energy: data.checkin.energy, mood: data.checkin.mood, soreness: data.checkin.soreness });
+          setCheckinDraft({
+            sleepHours: data.checkin.sleepMinutes / 60,
+            energy: data.checkin.energy,
+            mood: data.checkin.mood,
+            soreness: data.checkin.soreness,
+          });
         } else setEditingCheckin(true);
       }
-      const planResponse = await fetch(`/api/plan?date=${localDate}`, { cache: 'no-store' });
-      if (planResponse.ok) { const data = await planResponse.json() as { plan: { items: PlanItem[] } | null }; if (data.plan) setPlanItems(data.plan.items); }
+      const planResponse = await fetch(`/api/plan?date=${localDate}`, {
+        cache: 'no-store',
+      });
+      if (planResponse.ok) {
+        const data = (await planResponse.json()) as {
+          plan: { items: PlanItem[] } | null;
+        };
+        if (data.plan) setPlanItems(data.plan.items);
+      }
       await refreshLife();
     };
     void load();
   }, []);
-  useEffect(()=>{if(!focusActive||!focusRunning||focusRemaining<=0)return;const timer=window.setInterval(()=>setFocusRemaining(value=>Math.max(0,value-1)),1000);return()=>window.clearInterval(timer)},[focusActive,focusRunning,focusRemaining]);
+  useEffect(() => {
+    if (!focusActive || !focusRunning || focusRemaining <= 0) return;
+    const timer = window.setInterval(
+      () => setFocusRemaining((value) => Math.max(0, value - 1)),
+      1000,
+    );
+    return () => window.clearInterval(timer);
+  }, [focusActive, focusRunning, focusRemaining]);
+  useEffect(
+    () => () => {
+      voiceRecognitionRef.current?.abort?.();
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    },
+    [],
+  );
 
   const togglePriority = async (id: string) => {
     const current = priorities.find((priority) => priority.id === id);
     if (!current) return;
     const completed = !Boolean(current.completed);
-    setPriorities((items) => items.map((item) => item.id === id ? { ...item, completed } : item));
+    setPriorities((items) =>
+      items.map((item) => (item.id === id ? { ...item, completed } : item)),
+    );
     if (viewer && !id.startsWith('demo-')) {
-      const response = await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ completed }) });
-      if (!response.ok) setPriorities((items) => items.map((item) => item.id === id ? { ...item, completed: !completed } : item));
+      const response = await fetch(`/api/tasks/${id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ completed }),
+      });
+      if (!response.ok)
+        setPriorities((items) =>
+          items.map((item) =>
+            item.id === id ? { ...item, completed: !completed } : item,
+          ),
+        );
     }
   };
 
@@ -123,251 +354,1729 @@ export default function Home() {
     const title = newTaskTitle.trim();
     if (!viewer || !title) return;
     setSavingTask(true);
-    const response = await fetch('/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title }) });
+    const response = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title }),
+    });
     if (response.ok) {
-      const data = await response.json() as { task: Priority };
+      const data = (await response.json()) as { task: Priority };
       setPriorities((items) => [...items, data.task]);
-      setNewTaskTitle(''); setAddingTask(false);
+      setNewTaskTitle('');
+      setAddingTask(false);
     }
     setSavingTask(false);
   };
 
-  const completedCount = priorities.filter((priority) => Boolean(priority.completed)).length;
+  const completedCount = priorities.filter((priority) =>
+    Boolean(priority.completed),
+  ).length;
   const firstName = viewer?.displayName.split(/\s|@/)[0] || 'Koushiram';
-  const initials = viewer ? viewer.displayName.split(/\s|@/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() : 'KN';
-  const readinessScore = checkin ? Math.round(Math.min(checkin.sleepMinutes / 480, 1) * 40 + (checkin.energy / 5) * 35 + ((6 - checkin.soreness) / 5) * 25) : 78;
-  const recoveryDay = Boolean(checkin && (checkin.energy <= 2 || checkin.sleepMinutes < 360 || checkin.soreness >= 4));
+  const initials = viewer
+    ? viewer.displayName
+        .split(/\s|@/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0])
+        .join('')
+        .toUpperCase()
+    : 'KN';
+  const readinessScore = checkin
+    ? Math.round(
+        Math.min(checkin.sleepMinutes / 480, 1) * 40 +
+          (checkin.energy / 5) * 35 +
+          ((6 - checkin.soreness) / 5) * 25,
+      )
+    : 78;
+  const recoveryDay = Boolean(
+    checkin &&
+    (checkin.energy <= 2 ||
+      checkin.sleepMinutes < 360 ||
+      checkin.soreness >= 4),
+  );
   const now = new Date();
-  const greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 17 ? 'Good afternoon' : 'Good evening';
-  const displayDate = new Intl.DateTimeFormat('en-AU', { weekday:'long', day:'numeric', month:'long' }).format(now);
+  const greeting =
+    now.getHours() < 12
+      ? 'Good morning'
+      : now.getHours() < 17
+        ? 'Good afternoon'
+        : 'Good evening';
+  const displayDate = new Intl.DateTimeFormat('en-AU', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(now);
 
   const saveCheckin = async (event: FormEvent) => {
     event.preventDefault();
     if (!viewer) return;
     setSavingCheckin(true);
-    const nextCheckin: Checkin = { checkinDate: new Date().toLocaleDateString('en-CA'), sleepMinutes: Math.round(checkinDraft.sleepHours * 60), energy: checkinDraft.energy, mood: checkinDraft.mood, soreness: checkinDraft.soreness };
-    const response = await fetch('/api/checkins', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(nextCheckin) });
-    if (response.ok) { setCheckin(nextCheckin); setEditingCheckin(false); }
+    const nextCheckin: Checkin = {
+      checkinDate: new Date().toLocaleDateString('en-CA'),
+      sleepMinutes: Math.round(checkinDraft.sleepHours * 60),
+      energy: checkinDraft.energy,
+      mood: checkinDraft.mood,
+      soreness: checkinDraft.soreness,
+    };
+    const response = await fetch('/api/checkins', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(nextCheckin),
+    });
+    if (response.ok) {
+      setCheckin(nextCheckin);
+      setEditingCheckin(false);
+    }
     setSavingCheckin(false);
   };
 
   const generatePlan = async () => {
-    if (!viewer) return; setGeneratingPlan(true);
-    const response = await fetch('/api/plan', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ date: new Date().toLocaleDateString('en-CA') }) });
-    if (response.ok) { const data = await response.json() as { plan: { items: PlanItem[] } }; setPlanItems(data.plan.items); }
+    if (!viewer) return;
+    setGeneratingPlan(true);
+    const response = await fetch('/api/plan', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ date: new Date().toLocaleDateString('en-CA') }),
+    });
+    if (response.ok) {
+      const data = (await response.json()) as { plan: { items: PlanItem[] } };
+      setPlanItems(data.plan.items);
+    }
     setGeneratingPlan(false);
   };
 
   const saveReview = async (event: FormEvent) => {
-    event.preventDefault(); if (!viewer) return;
-    const response = await fetch('/api/review', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ date: new Date().toLocaleDateString('en-CA'), ...reviewDraft }) });
-    if (response.ok) { setReviewSaved(true); setReviewOpen(false); }
+    event.preventDefault();
+    if (!viewer) return;
+    const response = await fetch('/api/review', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        date: new Date().toLocaleDateString('en-CA'),
+        ...reviewDraft,
+      }),
+    });
+    if (response.ok) {
+      setReviewSaved(true);
+      setReviewOpen(false);
+    }
   };
 
-  const saveLife = async (payload: Record<string,unknown>) => {
-    if(!viewer)return; const response=await fetch('/api/life',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
-    if(response.ok){const data=await response.json() as {account:MoneyAccount;expenses:Expense[];goals:Goal[];healthLogs:HealthLog[]};setAccount(data.account);setExpenses(data.expenses);setGoals(data.goals);setHealthLogs(data.healthLogs);}
+  const saveLife = async (payload: Record<string, unknown>) => {
+    if (!viewer) return;
+    const response = await fetch('/api/life', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (response.ok) {
+      const data = (await response.json()) as {
+        account: MoneyAccount;
+        expenses: Expense[];
+        goals: Goal[];
+        healthLogs: HealthLog[];
+      };
+      setAccount(data.account);
+      setExpenses(data.expenses);
+      setGoals(data.goals);
+      setHealthLogs(data.healthLogs);
+    }
   };
 
   const askCoach = async (event?: FormEvent, suggestedMessage?: string) => {
     event?.preventDefault();
     const message = (suggestedMessage ?? coachInput).trim();
     if (!message || coachBusy) return;
-    if (!viewer) { setCoachOpen(true); return; }
+    if (!viewer) {
+      setCoachOpen(true);
+      return;
+    }
     setCoachMessages((items) => [...items, { role: 'user', text: message }]);
-    setCoachInput(''); setCoachBusy(true); setCoachOpen(true);
-    const response = await fetch('/api/coach', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message, date: new Date().toLocaleDateString('en-CA') }) });
-    const data = await response.json() as { reply?: string; error?: string; action?: { type: 'task_created' | 'task_completed' | 'task_updated' | 'task_deleted' | 'checkin_saved' | 'review_saved' | 'plan_saved' | 'summary_ready' | 'money_updated' | 'expense_created' | 'goal_created' | 'health_logged'; task?: Priority; checkin?: Checkin; plan?: { items: PlanItem[]; readinessScore: number } } };
-    if (data.action?.type === 'task_created' && data.action.task) setPriorities((items) => [...items, data.action!.task!]);
-    if ((data.action?.type === 'task_completed' || data.action?.type === 'task_updated') && data.action.task) setPriorities((items) => items.map((item) => item.id === data.action!.task!.id ? data.action!.task! : item));
-    if (data.action?.type === 'task_deleted' && data.action.task) setPriorities((items) => items.filter((item) => item.id !== data.action!.task!.id));
-    if (data.action?.type === 'checkin_saved' && data.action.checkin) { setCheckin(data.action.checkin); setEditingCheckin(false); }
+    setCoachInput('');
+    setCoachBusy(true);
+    setCoachOpen(true);
+    const response = await fetch('/api/coach', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        date: new Date().toLocaleDateString('en-CA'),
+      }),
+    });
+    const data = (await response.json()) as {
+      reply?: string;
+      error?: string;
+      action?: {
+        type:
+          | 'task_created'
+          | 'task_completed'
+          | 'task_updated'
+          | 'task_deleted'
+          | 'checkin_saved'
+          | 'review_saved'
+          | 'plan_saved'
+          | 'summary_ready'
+          | 'money_updated'
+          | 'expense_created'
+          | 'goal_created'
+          | 'health_logged';
+        task?: Priority;
+        checkin?: Checkin;
+        plan?: { items: PlanItem[]; readinessScore: number };
+      };
+    };
+    if (data.action?.type === 'task_created' && data.action.task)
+      setPriorities((items) => [...items, data.action!.task!]);
+    if (
+      (data.action?.type === 'task_completed' ||
+        data.action?.type === 'task_updated') &&
+      data.action.task
+    )
+      setPriorities((items) =>
+        items.map((item) =>
+          item.id === data.action!.task!.id ? data.action!.task! : item,
+        ),
+      );
+    if (data.action?.type === 'task_deleted' && data.action.task)
+      setPriorities((items) =>
+        items.filter((item) => item.id !== data.action!.task!.id),
+      );
+    if (data.action?.type === 'checkin_saved' && data.action.checkin) {
+      setCheckin(data.action.checkin);
+      setEditingCheckin(false);
+    }
     if (data.action?.type === 'review_saved') setReviewSaved(true);
-    if (data.action?.type === 'plan_saved' && data.action.plan) setPlanItems(data.action.plan.items);
-    if (data.action && ['money_updated','expense_created','goal_created','health_logged'].includes(data.action.type)) await refreshLife();
-    const reply=cleanCoachText(data.reply ?? data.error ?? 'I could not complete that request just now.');
+    if (data.action?.type === 'plan_saved' && data.action.plan)
+      setPlanItems(data.action.plan.items);
+    if (
+      data.action &&
+      [
+        'money_updated',
+        'expense_created',
+        'goal_created',
+        'health_logged',
+      ].includes(data.action.type)
+    )
+      await refreshLife();
+    const reply = cleanCoachText(
+      data.reply ?? data.error ?? 'I could not complete that request just now.',
+    );
     setCoachMessages((items) => [...items, { role: 'coach', text: reply }]);
-    if(voiceReplyRef.current&&'speechSynthesis'in window){window.speechSynthesis.cancel();window.speechSynthesis.speak(new SpeechSynthesisUtterance(reply.replace(/^•\s*/gm,'')));voiceReplyRef.current=false;}
+    if (voiceReplyRef.current && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(
+        reply.replace(/^•\s*/gm, ''),
+      );
+      const voices = window.speechSynthesis.getVoices();
+      utterance.voice =
+        voices.find((voice) =>
+          /samantha|victoria|karen|zira|aria|female/i.test(voice.name),
+        ) ??
+        voices.find((voice) => voice.lang.startsWith('en')) ??
+        null;
+      utterance.rate = 0.93;
+      utterance.pitch = 1.08;
+      utterance.volume = 0.9;
+      window.speechSynthesis.speak(utterance);
+      voiceReplyRef.current = false;
+    }
     setCoachBusy(false);
   };
 
-  const startVoice=()=>{setVoiceError('');const SpeechRecognition=(window as typeof window&{SpeechRecognition?:new()=>any;webkitSpeechRecognition?:new()=>any}).SpeechRecognition||(window as typeof window&{webkitSpeechRecognition?:new()=>any}).webkitSpeechRecognition;if(!SpeechRecognition){setVoiceError('Voice input is not supported in this browser. You can still type your request.');setCoachOpen(true);return;}const recognition=new SpeechRecognition();recognition.lang='en-AU';recognition.interimResults=false;recognition.continuous=false;recognition.onstart=()=>setListening(true);recognition.onend=()=>setListening(false);recognition.onerror=()=>{setListening(false);setVoiceError('I could not hear that clearly. Please try again.');setCoachOpen(true)};recognition.onresult=(event:any)=>{const transcript=event.results?.[0]?.[0]?.transcript?.trim();if(transcript){voiceReplyRef.current=true;setCoachOpen(true);void askCoach(undefined,transcript)}};recognition.start();};
+  const startVoice = () => {
+    setVoiceError('');
+    const SpeechRecognition =
+      (
+        window as typeof window & {
+          SpeechRecognition?: new () => any;
+          webkitSpeechRecognition?: new () => any;
+        }
+      ).SpeechRecognition ||
+      (window as typeof window & { webkitSpeechRecognition?: new () => any })
+        .webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setVoiceError(
+        'Voice input is not supported in this browser. You can still type your request.',
+      );
+      setCoachOpen(true);
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    voiceRecognitionRef.current = recognition;
+    recognition.lang = 'en-AU';
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.onstart = () => setListening(true);
+    recognition.onend = () => setListening(false);
+    recognition.onerror = () => {
+      setListening(false);
+      setVoiceError('I could not hear that clearly. Please try again.');
+      setCoachOpen(true);
+    };
+    recognition.onresult = (event: any) => {
+      const transcript = event.results?.[0]?.[0]?.transcript?.trim();
+      if (transcript) {
+        voiceReplyRef.current = true;
+        setCoachOpen(true);
+        void askCoach(undefined, transcript);
+      }
+    };
+    recognition.start();
+  };
+  const closeCoach = () => {
+    voiceReplyRef.current = false;
+    voiceRecognitionRef.current?.abort?.();
+    voiceRecognitionRef.current = null;
+    setListening(false);
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    setCoachOpen(false);
+  };
 
-  const monthSpent=expenses.reduce((sum,item)=>sum+item.amountCents,0);
-  const budgetUsed=account.monthlyBudgetCents?Math.min(100,Math.round(monthSpent/account.monthlyBudgetCents*100)):0;
-  const todayKey=new Date().toLocaleDateString('en-CA');
-  const todayExpenses=expenses.filter((item)=>item.spentOn===todayKey).reduce((sum,item)=>sum+item.amountCents,0);
-  const workouts=healthLogs.filter((item)=>item.kind==='workout'); const meals=healthLogs.filter((item)=>item.kind==='meal');
+  const monthSpent = expenses.reduce((sum, item) => sum + item.amountCents, 0);
+  const budgetUsed = account.monthlyBudgetCents
+    ? Math.min(100, Math.round((monthSpent / account.monthlyBudgetCents) * 100))
+    : 0;
+  const todayKey = new Date().toLocaleDateString('en-CA');
+  const todayExpenses = expenses
+    .filter((item) => item.spentOn === todayKey)
+    .reduce((sum, item) => sum + item.amountCents, 0);
+  const workouts = healthLogs.filter((item) => item.kind === 'workout');
+  const meals = healthLogs.filter((item) => item.kind === 'meal');
 
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex min-h-screen max-w-[1500px]">
         <aside className="hidden w-64 shrink-0 border-r border-border/70 px-5 py-6 lg:flex lg:flex-col">
           <div className="flex items-center gap-3 px-2">
-            <div className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm"><Sparkles className="size-4" /></div>
-            <div><p className="font-semibold tracking-tight">Northstar</p><p className="text-xs text-muted-foreground">Personal intelligence</p></div>
+            <div className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+              <Sparkles className="size-4" />
+            </div>
+            <div>
+              <p className="font-semibold tracking-tight">Northstar</p>
+              <p className="text-xs text-muted-foreground">
+                Personal intelligence
+              </p>
+            </div>
           </div>
           <nav className="mt-10 space-y-1" aria-label="Primary navigation">
-            {([['Today', SunMedium], ['Plan', CalendarDays], ['Goals', Target], ['Money', CircleDollarSign], ['Wellbeing', HeartPulse], ['Insights', Flame]] as const).map(([label, Icon]) => (
-              <button key={label} onClick={() => setActiveSection(label)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${activeSection === label ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>
-                <Icon className="size-4" />{label}
+            {(
+              [
+                ['Today', SunMedium],
+                ['Plan', CalendarDays],
+                ['Goals', Target],
+                ['Money', CircleDollarSign],
+                ['Wellbeing', HeartPulse],
+                ['Insights', Flame],
+              ] as const
+            ).map(([label, Icon]) => (
+              <button
+                key={label}
+                onClick={() => setActiveSection(label)}
+                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${activeSection === label ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+              >
+                <Icon className="size-4" />
+                {label}
               </button>
             ))}
           </nav>
           <div className="mt-auto rounded-2xl border border-border/70 bg-card p-4">
-            <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground"><Moon className="size-4 text-violet-500" />Evening review</div>
+            <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+              <Moon className="size-4 text-violet-500" />
+              Evening review
+            </div>
             <p className="text-sm font-medium">Close the day with intention.</p>
-            <Button onClick={() => setReviewOpen(true)} variant="outline" className="mt-4 w-full justify-between">{reviewSaved ? 'Review saved' : 'Start at 8:30 PM'} <ChevronRight /></Button>
+            <Button
+              onClick={() => setReviewOpen(true)}
+              variant="outline"
+              className="mt-4 w-full justify-between"
+            >
+              {reviewSaved ? 'Review saved' : 'Start at 8:30 PM'}{' '}
+              <ChevronRight />
+            </Button>
           </div>
         </aside>
 
         <section className="min-w-0 flex-1 px-4 py-4 sm:px-7 lg:px-10 lg:py-7">
           <header className="mb-8 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Button variant="outline" size="icon" className="lg:hidden" aria-label="Open menu"><Menu /></Button>
-              <div><p className="text-sm text-muted-foreground">{displayDate}</p><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{activeSection === 'Today' ? `${greeting}, ${firstName}` : activeSection}</h1></div>
+              <Button
+                variant="outline"
+                size="icon"
+                className="lg:hidden"
+                aria-label="Open menu"
+              >
+                <Menu />
+              </Button>
+              <div>
+                <p className="text-sm text-muted-foreground">{displayDate}</p>
+                <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                  {activeSection === 'Today'
+                    ? `${greeting}, ${firstName}`
+                    : activeSection}
+                </h1>
+              </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button onClick={() => setCoachOpen(true)} variant="outline" size="icon" aria-label="Open assistant chat"><MessageCircle /></Button>
+              <Button
+                onClick={() => setCoachOpen(true)}
+                variant="outline"
+                size="icon"
+                aria-label="Open assistant chat"
+              >
+                <MessageCircle />
+              </Button>
               {authReady && !viewer ? (
-                <a href="/signin-with-chatgpt?return_to=%2F" target="_top" className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground"><LogIn className="size-4" /> Sign in</a>
+                <a
+                  href="/signin-with-chatgpt?return_to=%2F"
+                  target="_top"
+                  className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground"
+                >
+                  <LogIn className="size-4" /> Sign in
+                </a>
               ) : (
-                <div title={viewer?.email || 'Demo mode'} className="grid size-9 place-items-center rounded-full bg-[#d9f3e5] text-sm font-semibold text-[#1a5f47]">{initials}</div>
+                <div
+                  title={viewer?.email || 'Demo mode'}
+                  className="grid size-9 place-items-center rounded-full bg-[#d9f3e5] text-sm font-semibold text-[#1a5f47]"
+                >
+                  {initials}
+                </div>
               )}
             </div>
           </header>
 
-          {activeSection === 'Today' ? <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(310px,.75fr)]">
-            <div className="space-y-5">
-              <Card className="overflow-visible border-0 bg-primary text-primary-foreground ring-0 shadow-[0_24px_70px_-32px_rgba(22,81,63,.7)]">
-                <CardHeader className="pb-0">
-                  <div className="mb-4 flex items-center gap-2 text-xs font-medium text-primary-foreground/70"><span className="flex size-6 items-center justify-center rounded-full bg-white/10"><Sparkles className="size-3.5" /></span>YOUR NEXT BEST MOVE</div>
-                  <CardTitle className="max-w-2xl text-2xl font-medium leading-tight sm:text-3xl">{recoveryDay ? 'Reduce today’s load and protect one focused priority.' : 'Protect the next 75 minutes for the Northstar product brief.'}</CardTitle>
-                  <CardDescription className="mt-2 max-w-xl text-primary-foreground/70">{recoveryDay ? 'Your check-in shows limited recovery. Keep the product brief, add more buffer, and make the workout optional.' : 'Your energy is strongest now, and the rest of your morning has enough buffer before the team check-in.'}</CardDescription>
-                </CardHeader>
-                <CardContent className="mt-6 flex flex-wrap gap-3">
-                  <Button onClick={() => {setFocusRemaining((planItems[0]?.duration??75)*60);setFocusActive(true);setFocusRunning(true)}} className="h-10 bg-white px-4 text-primary hover:bg-white/90">
-                    Start focus session <ArrowRight />
-                  </Button>
-                  <Button onClick={async()=>{await generatePlan();setPlanAdjusted(true)}} disabled={generatingPlan} className="h-10 border-white/20 bg-white/10 px-4 text-white hover:bg-white/15">{generatingPlan?'Adjusting…':'Adjust my plan'}</Button>
-                </CardContent>
-              </Card>
+          {activeSection === 'Today' ? (
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(310px,.75fr)]">
+              <div className="space-y-5">
+                <Card className="overflow-visible border-0 bg-primary text-primary-foreground ring-0 shadow-[0_24px_70px_-32px_rgba(22,81,63,.7)]">
+                  <CardHeader className="pb-0">
+                    <div className="mb-4 flex items-center gap-2 text-xs font-medium text-primary-foreground/70">
+                      <span className="flex size-6 items-center justify-center rounded-full bg-white/10">
+                        <Sparkles className="size-3.5" />
+                      </span>
+                      YOUR NEXT BEST MOVE
+                    </div>
+                    <CardTitle className="max-w-2xl text-2xl font-medium leading-tight sm:text-3xl">
+                      {recoveryDay
+                        ? 'Reduce today’s load and protect one focused priority.'
+                        : 'Protect the next 75 minutes for the Northstar product brief.'}
+                    </CardTitle>
+                    <CardDescription className="mt-2 max-w-xl text-primary-foreground/70">
+                      {recoveryDay
+                        ? 'Your check-in shows limited recovery. Keep the product brief, add more buffer, and make the workout optional.'
+                        : 'Your energy is strongest now, and the rest of your morning has enough buffer before the team check-in.'}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="mt-6 flex flex-wrap gap-3">
+                    <Button
+                      onClick={() => {
+                        setFocusRemaining((planItems[0]?.duration ?? 75) * 60);
+                        setFocusActive(true);
+                        setFocusRunning(true);
+                      }}
+                      className="h-10 bg-white px-4 text-primary hover:bg-white/90"
+                    >
+                      Start focus session <ArrowRight />
+                    </Button>
+                    <Button
+                      onClick={async () => {
+                        await generatePlan();
+                        setPlanAdjusted(true);
+                      }}
+                      disabled={generatingPlan}
+                      className="h-10 border-white/20 bg-white/10 px-4 text-white hover:bg-white/15"
+                    >
+                      {generatingPlan ? 'Adjusting…' : 'Adjust my plan'}
+                    </Button>
+                  </CardContent>
+                </Card>
 
-              {planAdjusted && (
-                <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" role="status">
-                  <span>Your plan has been regenerated from current priorities and readiness. Open Plan to review or edit every block.</span>
-                  <Button variant="ghost" size="sm" onClick={() => setPlanAdjusted(false)}>Undo</Button>
+                {planAdjusted && (
+                  <div
+                    className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
+                    role="status"
+                  >
+                    <span>
+                      Your plan has been regenerated from current priorities and
+                      readiness. Open Plan to review or edit every block.
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPlanAdjusted(false)}
+                    >
+                      Undo
+                    </Button>
+                  </div>
+                )}
+
+                <div className="grid gap-5 md:grid-cols-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Today’s priorities</CardTitle>
+                      <CardDescription>
+                        {completedCount} of {priorities.length} complete ·{' '}
+                        {viewer ? 'Saved' : 'Demo mode'}
+                      </CardDescription>
+                      <CardAction>
+                        <Button
+                          onClick={() => setAddingTask((open) => !open)}
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Add priority"
+                        >
+                          {addingTask ? <X /> : <Plus />}
+                        </Button>
+                      </CardAction>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {addingTask &&
+                        (viewer ? (
+                          <form
+                            onSubmit={addTask}
+                            className="mb-3 flex gap-2 rounded-xl bg-muted/60 p-2"
+                          >
+                            <Input
+                              autoFocus
+                              value={newTaskTitle}
+                              onChange={(event) =>
+                                setNewTaskTitle(event.target.value)
+                              }
+                              placeholder="Add a priority…"
+                              maxLength={140}
+                            />
+                            <Button
+                              type="submit"
+                              disabled={savingTask || !newTaskTitle.trim()}
+                            >
+                              {savingTask ? 'Saving' : 'Add'}
+                            </Button>
+                          </form>
+                        ) : (
+                          <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                            <p className="font-medium">
+                              Sign in to save your priorities
+                            </p>
+                            <p className="mt-1 text-xs text-emerald-800/70">
+                              Your tasks will stay private and follow you across
+                              devices.
+                            </p>
+                            <a
+                              href="/signin-with-chatgpt?return_to=%2F"
+                              target="_top"
+                              className="mt-3 inline-flex items-center gap-1 text-xs font-semibold underline underline-offset-4"
+                            >
+                              Continue with ChatGPT{' '}
+                              <ArrowRight className="size-3" />
+                            </a>
+                          </div>
+                        ))}
+                      {priorities.map((priority, index) => {
+                        const done = Boolean(priority.completed);
+                        return (
+                          <button
+                            key={priority.id}
+                            onClick={() => togglePriority(priority.id)}
+                            className={`group flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-all hover:-translate-y-px hover:shadow-sm ${done ? 'border-transparent bg-muted/40' : index === 0 ? 'border-red-950 bg-gradient-to-r from-red-950 to-red-800 text-white shadow-md' : index === 1 ? 'border-red-300 bg-gradient-to-r from-red-100 to-red-50' : index === 2 ? 'border-orange-200 bg-gradient-to-r from-orange-50 to-background' : 'border-border/60 bg-card'}`}
+                          >
+                            <span
+                              className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border transition-colors ${done ? 'border-primary bg-primary text-primary-foreground' : index === 0 ? 'border-white/70 bg-white/10' : 'border-border bg-background'}`}
+                            >
+                              {done && <Check className="size-3" />}
+                            </span>
+                            <span className="min-w-0">
+                              <span
+                                className={`block text-sm font-medium ${done ? 'text-muted-foreground line-through' : ''}`}
+                              >
+                                {priority.title}
+                              </span>
+                              <span
+                                className={`mt-1 block text-xs ${!done && index === 0 ? 'text-red-100' : 'text-muted-foreground'}`}
+                              >
+                                {priority.meta}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Today’s rhythm</CardTitle>
+                      <CardDescription>
+                        {planItems.length
+                          ? `${planItems.length} saved blocks`
+                          : 'Generate a plan from your priorities'}
+                      </CardDescription>
+                      <CardAction>
+                        <Button
+                          onClick={generatePlan}
+                          disabled={!viewer || generatingPlan}
+                          variant="ghost"
+                          size="sm"
+                        >
+                          {generatingPlan
+                            ? 'Planning…'
+                            : planItems.length
+                              ? 'Replan'
+                              : 'Generate'}
+                        </Button>
+                      </CardAction>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {(planItems.length ? planItems : timeline).map((item) => (
+                        <div
+                          key={`${item.time}-${item.title}`}
+                          className="grid grid-cols-[46px_10px_1fr] items-center gap-3"
+                        >
+                          <span className="text-xs tabular-nums text-muted-foreground">
+                            {item.time}
+                          </span>
+                          <span
+                            className={`size-2 rounded-full timeline-${'tone' in item ? item.tone : item.type === 'Focus' ? 'focus' : 'open'}`}
+                          />
+                          <div className="min-w-0 border-b border-border/70 pb-3 last:border-0">
+                            <p className="truncate text-sm font-medium">
+                              {item.title}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {item.type}
+                              {'duration' in item
+                                ? ` · ${item.duration} min`
+                                : ''}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
                 </div>
-              )}
+              </div>
 
-              <div className="grid gap-5 md:grid-cols-2">
+              <div className="space-y-5">
                 <Card>
-                  <CardHeader><CardTitle>Today’s priorities</CardTitle><CardDescription>{completedCount} of {priorities.length} complete · {viewer ? 'Saved' : 'Demo mode'}</CardDescription><CardAction><Button onClick={() => setAddingTask((open) => !open)} variant="ghost" size="icon" aria-label="Add priority">{addingTask ? <X /> : <Plus />}</Button></CardAction></CardHeader>
-                  <CardContent className="space-y-2">
-                    {addingTask && (viewer ? (
-                      <form onSubmit={addTask} className="mb-3 flex gap-2 rounded-xl bg-muted/60 p-2">
-                        <Input autoFocus value={newTaskTitle} onChange={(event) => setNewTaskTitle(event.target.value)} placeholder="Add a priority…" maxLength={140} />
-                        <Button type="submit" disabled={savingTask || !newTaskTitle.trim()}>{savingTask ? 'Saving' : 'Add'}</Button>
+                  <CardHeader>
+                    <CardTitle>Daily readiness</CardTitle>
+                    <CardDescription>
+                      {checkin
+                        ? 'Based on today’s check-in'
+                        : 'Complete your morning check-in'}
+                    </CardDescription>
+                    <CardAction>
+                      {viewer ? (
+                        <Button
+                          onClick={() => setEditingCheckin((open) => !open)}
+                          variant="ghost"
+                          size="sm"
+                        >
+                          {editingCheckin
+                            ? 'Close'
+                            : checkin
+                              ? 'Update'
+                              : 'Check in'}
+                        </Button>
+                      ) : (
+                        <Badge className="bg-emerald-100 text-emerald-800">
+                          Demo
+                        </Badge>
+                      )}
+                    </CardAction>
+                  </CardHeader>
+                  <CardContent>
+                    {editingCheckin && viewer ? (
+                      <form onSubmit={saveCheckin} className="space-y-4">
+                        <label className="block text-xs font-medium">
+                          Sleep last night
+                          <div className="mt-2">
+                            <WheelSelect
+                              value={checkinDraft.sleepHours}
+                              onChange={(sleepHours) =>
+                                setCheckinDraft((draft) => ({
+                                  ...draft,
+                                  sleepHours,
+                                }))
+                              }
+                              options={Array.from(
+                                { length: 29 },
+                                (_, index) => index / 2,
+                              )}
+                              suffix="hours"
+                            />
+                          </div>
+                        </label>
+                        {(
+                          [
+                            ['Energy', 'energy'],
+                            ['Mood', 'mood'],
+                            ['Soreness', 'soreness'],
+                          ] as const
+                        ).map(([label, key]) => (
+                          <div key={key}>
+                            <p className="mb-2 text-xs font-medium">{label}</p>
+                            <WheelSelect
+                              value={checkinDraft[key]}
+                              onChange={(score) =>
+                                setCheckinDraft((draft) => ({
+                                  ...draft,
+                                  [key]: score,
+                                }))
+                              }
+                              options={[1, 2, 3, 4, 5]}
+                              suffix="/ 5"
+                            />
+                          </div>
+                        ))}
+                        <Button
+                          type="submit"
+                          className="w-full"
+                          disabled={savingCheckin}
+                        >
+                          {savingCheckin
+                            ? 'Saving check-in…'
+                            : 'Save morning check-in'}
+                        </Button>
                       </form>
                     ) : (
-                      <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-                        <p className="font-medium">Sign in to save your priorities</p>
-                        <p className="mt-1 text-xs text-emerald-800/70">Your tasks will stay private and follow you across devices.</p>
-                        <a href="/signin-with-chatgpt?return_to=%2F" target="_top" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold underline underline-offset-4">Continue with ChatGPT <ArrowRight className="size-3" /></a>
-                      </div>
-                    ))}
-                    {priorities.map((priority) => { const done = Boolean(priority.completed); return (
-                      <button key={priority.id} onClick={() => togglePriority(priority.id)} className="group flex w-full items-start gap-3 rounded-xl border border-transparent p-2.5 text-left transition-colors hover:border-border hover:bg-muted/50">
-                        <span className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border transition-colors ${done ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background'}`}>{done && <Check className="size-3" />}</span>
-                        <span className="min-w-0"><span className={`block text-sm font-medium ${done ? 'text-muted-foreground line-through' : ''}`}>{priority.title}</span><span className="mt-1 block text-xs text-muted-foreground">{priority.meta}</span></span>
-                      </button>
-                    ); })}
+                      <>
+                        <div className="mb-5 flex items-end gap-3">
+                          <span className="text-4xl font-semibold tracking-tight">
+                            {readinessScore}
+                          </span>
+                          <span className="pb-1 text-sm text-muted-foreground">
+                            / 100
+                          </span>
+                        </div>
+                        <Progress
+                          value={readinessScore}
+                          className="[&_[data-slot=progress-indicator]]:bg-emerald-500"
+                        />
+                        <div className="mt-5 grid grid-cols-3 gap-2 text-center">
+                          {[
+                            [
+                              'Sleep',
+                              checkin
+                                ? `${Math.floor(checkin.sleepMinutes / 60)}h ${checkin.sleepMinutes % 60}m`
+                                : '7h 18m',
+                            ],
+                            [
+                              'Energy',
+                              checkin ? `${checkin.energy}/5` : 'Good',
+                            ],
+                            ['Load', recoveryDay ? 'Reduce' : 'Light'],
+                          ].map(([label, value]) => (
+                            <div
+                              key={label}
+                              className="rounded-xl bg-muted/60 p-2.5"
+                            >
+                              <p className="text-xs text-muted-foreground">
+                                {label}
+                              </p>
+                              <p className="mt-1 text-sm font-medium">
+                                {value}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </CardContent>
                 </Card>
 
                 <Card>
-                  <CardHeader><CardTitle>Today’s rhythm</CardTitle><CardDescription>{planItems.length ? `${planItems.length} saved blocks` : 'Generate a plan from your priorities'}</CardDescription><CardAction><Button onClick={generatePlan} disabled={!viewer || generatingPlan} variant="ghost" size="sm">{generatingPlan ? 'Planning…' : planItems.length ? 'Replan' : 'Generate'}</Button></CardAction></CardHeader>
-                  <CardContent className="space-y-3">
-                    {(planItems.length ? planItems : timeline).map((item) => (
-                      <div key={`${item.time}-${item.title}`} className="grid grid-cols-[46px_10px_1fr] items-center gap-3"><span className="text-xs tabular-nums text-muted-foreground">{item.time}</span><span className={`size-2 rounded-full timeline-${'tone' in item ? item.tone : item.type === 'Focus' ? 'focus' : 'open'}`} /><div className="min-w-0 border-b border-border/70 pb-3 last:border-0"><p className="truncate text-sm font-medium">{item.title}</p><p className="text-xs text-muted-foreground">{item.type}{'duration' in item ? ` · ${item.duration} min` : ''}</p></div></div>
-                    ))}
+                  <CardHeader>
+                    <CardTitle>Money pulse</CardTitle>
+                    <CardDescription>
+                      Live from your private expense ledger
+                    </CardDescription>
+                    <CardAction>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setActiveSection('Money')}
+                      >
+                        Open
+                      </Button>
+                    </CardAction>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Balance</p>
+                        <p className="mt-1 text-2xl font-semibold tracking-tight">
+                          ${(account.balanceCents / 100).toLocaleString()}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">
+                          Spent today
+                        </p>
+                        <p className="mt-1 text-2xl font-semibold tracking-tight">
+                          ${(todayExpenses / 100).toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                    <Progress
+                      value={budgetUsed}
+                      className="mt-4 [&_[data-slot=progress-indicator]]:bg-amber-500"
+                    />
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      ${(monthSpent / 100).toFixed(2)} spent this month ·{' '}
+                      {budgetUsed}% of budget
+                    </p>
                   </CardContent>
                 </Card>
               </div>
             </div>
-
-            <div className="space-y-5">
-              <Card>
-                <CardHeader><CardTitle>Daily readiness</CardTitle><CardDescription>{checkin ? 'Based on today’s check-in' : 'Complete your morning check-in'}</CardDescription><CardAction>{viewer ? <Button onClick={() => setEditingCheckin((open) => !open)} variant="ghost" size="sm">{editingCheckin ? 'Close' : checkin ? 'Update' : 'Check in'}</Button> : <Badge className="bg-emerald-100 text-emerald-800">Demo</Badge>}</CardAction></CardHeader>
-                <CardContent>
-                  {editingCheckin && viewer ? (
-                    <form onSubmit={saveCheckin} className="space-y-4">
-                      <label className="block text-xs font-medium">Sleep last night<input type="number" min="0" max="14" step="0.25" value={checkinDraft.sleepHours} onChange={(event) => setCheckinDraft((draft) => ({ ...draft, sleepHours: Number(event.target.value) }))} className="mt-1 h-9 w-full rounded-lg border bg-background px-3 text-sm" /><span className="mt-1 block font-normal text-muted-foreground">Hours</span></label>
-                      {([['Energy', 'energy'], ['Mood', 'mood'], ['Soreness', 'soreness']] as const).map(([label, key]) => <div key={key}><p className="mb-2 text-xs font-medium">{label}</p><div className="grid grid-cols-5 gap-1">{[1,2,3,4,5].map((score) => <button type="button" key={score} onClick={() => setCheckinDraft((draft) => ({ ...draft, [key]: score }))} className={`h-8 rounded-lg border text-xs font-medium ${checkinDraft[key] === score ? 'border-primary bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}>{score}</button>)}</div></div>)}
-                      <Button type="submit" className="w-full" disabled={savingCheckin}>{savingCheckin ? 'Saving check-in…' : 'Save morning check-in'}</Button>
-                    </form>
-                  ) : (
-                    <><div className="mb-5 flex items-end gap-3"><span className="text-4xl font-semibold tracking-tight">{readinessScore}</span><span className="pb-1 text-sm text-muted-foreground">/ 100</span></div>
-                    <Progress value={readinessScore} className="[&_[data-slot=progress-indicator]]:bg-emerald-500" />
-                    <div className="mt-5 grid grid-cols-3 gap-2 text-center">{[['Sleep', checkin ? `${Math.floor(checkin.sleepMinutes / 60)}h ${checkin.sleepMinutes % 60}m` : '7h 18m'], ['Energy', checkin ? `${checkin.energy}/5` : 'Good'], ['Load', recoveryDay ? 'Reduce' : 'Light']].map(([label, value]) => <div key={label} className="rounded-xl bg-muted/60 p-2.5"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-sm font-medium">{value}</p></div>)}</div></>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader><CardTitle>Money pulse</CardTitle><CardDescription>Live from your private expense ledger</CardDescription><CardAction><Button variant="ghost" size="sm" onClick={()=>setActiveSection('Money')}>Open</Button></CardAction></CardHeader>
-                <CardContent><div className="grid grid-cols-2 gap-3"><div><p className="text-xs text-muted-foreground">Balance</p><p className="mt-1 text-2xl font-semibold tracking-tight">${(account.balanceCents/100).toLocaleString()}</p></div><div><p className="text-xs text-muted-foreground">Spent today</p><p className="mt-1 text-2xl font-semibold tracking-tight">${(todayExpenses/100).toFixed(2)}</p></div></div><Progress value={budgetUsed} className="mt-4 [&_[data-slot=progress-indicator]]:bg-amber-500"/><p className="mt-2 text-xs text-muted-foreground">${(monthSpent/100).toFixed(2)} spent this month · {budgetUsed}% of budget</p></CardContent>
-              </Card>
-            </div>
-          </div> : (
+          ) : (
             <div className="mx-auto max-w-5xl space-y-5">
-              <LifeWorkspace section={activeSection} signedIn={Boolean(viewer)} askCoach={(message)=>{setCoachOpen(true);void askCoach(undefined,message)}} />
+              <LifeWorkspace
+                section={activeSection}
+                signedIn={Boolean(viewer)}
+                askCoach={(message) => {
+                  setCoachOpen(true);
+                  void askCoach(undefined, message);
+                }}
+              />
               <div className="hidden">
-              {activeSection === 'Plan' && <><Card><CardHeader><CardTitle>Smart daily planner</CardTitle><CardDescription>Builds a realistic schedule from unfinished priorities and today’s recovery score.</CardDescription><CardAction><Button onClick={generatePlan} disabled={!viewer||generatingPlan}>{generatingPlan?'Planning…':planItems.length?'Replan today':'Generate plan'}</Button></CardAction></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2">{(planItems.length?planItems:timeline).map((item)=><div key={`${item.time}-${item.title}`} className="flex items-center gap-4 rounded-xl border bg-background p-4"><span className="w-12 text-sm tabular-nums text-muted-foreground">{item.time}</span><span className="size-2 rounded-full bg-emerald-500"/><div><p className="font-medium">{item.title}</p><p className="text-xs text-muted-foreground">{item.type}{'duration'in item?` · ${item.duration} min`:''}</p></div></div>)}</CardContent></Card><Card><CardHeader><CardTitle>Planning controls</CardTitle><CardDescription>Ask the coach to “replan today”, add a task, complete work, or summarize progress. Plans automatically reduce intensity when readiness is low.</CardDescription></CardHeader><CardContent className="flex flex-wrap gap-2">{['Replan my day','What should I do next?','Summarize my day'].map((p)=><Button key={p} variant="outline" onClick={()=>void askCoach(undefined,p)}>{p}</Button>)}</CardContent></Card></>}
+                {activeSection === 'Plan' && (
+                  <>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Smart daily planner</CardTitle>
+                        <CardDescription>
+                          Builds a realistic schedule from unfinished priorities
+                          and today’s recovery score.
+                        </CardDescription>
+                        <CardAction>
+                          <Button
+                            onClick={generatePlan}
+                            disabled={!viewer || generatingPlan}
+                          >
+                            {generatingPlan
+                              ? 'Planning…'
+                              : planItems.length
+                                ? 'Replan today'
+                                : 'Generate plan'}
+                          </Button>
+                        </CardAction>
+                      </CardHeader>
+                      <CardContent className="grid gap-3 sm:grid-cols-2">
+                        {(planItems.length ? planItems : timeline).map(
+                          (item) => (
+                            <div
+                              key={`${item.time}-${item.title}`}
+                              className="flex items-center gap-4 rounded-xl border bg-background p-4"
+                            >
+                              <span className="w-12 text-sm tabular-nums text-muted-foreground">
+                                {item.time}
+                              </span>
+                              <span className="size-2 rounded-full bg-emerald-500" />
+                              <div>
+                                <p className="font-medium">{item.title}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {item.type}
+                                  {'duration' in item
+                                    ? ` · ${item.duration} min`
+                                    : ''}
+                                </p>
+                              </div>
+                            </div>
+                          ),
+                        )}
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Planning controls</CardTitle>
+                        <CardDescription>
+                          Ask the coach to “replan today”, add a task, complete
+                          work, or summarize progress. Plans automatically
+                          reduce intensity when readiness is low.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="flex flex-wrap gap-2">
+                        {[
+                          'Replan my day',
+                          'What should I do next?',
+                          'Summarize my day',
+                        ].map((p) => (
+                          <Button
+                            key={p}
+                            variant="outline"
+                            onClick={() => void askCoach(undefined, p)}
+                          >
+                            {p}
+                          </Button>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  </>
+                )}
 
-              {activeSection === 'Goals' && <><Card><CardHeader><CardTitle>Goals command centre</CardTitle><CardDescription>Track outcomes separately from today’s actionable priorities.</CardDescription></CardHeader><CardContent><form className="grid gap-3 sm:grid-cols-5" onSubmit={(e)=>{e.preventDefault();void saveLife({type:'goal',...goalDraft}).then(()=>setGoalDraft({...goalDraft,title:''}))}}><Input className="sm:col-span-2" placeholder="Goal, e.g. build strength" value={goalDraft.title} onChange={(e)=>setGoalDraft({...goalDraft,title:e.target.value})}/><select className="h-9 rounded-lg border bg-background px-3 text-sm" value={goalDraft.area} onChange={(e)=>setGoalDraft({...goalDraft,area:e.target.value})}><option>Fitness</option><option>Career</option><option>Finance</option><option>Personal</option></select><Input type="number" placeholder="Target" value={goalDraft.targetValue} onChange={(e)=>setGoalDraft({...goalDraft,targetValue:e.target.value})}/><Button type="submit" disabled={!goalDraft.title.trim()}>Add goal</Button></form><div className="mt-5 grid gap-3 sm:grid-cols-2">{goals.map((goal)=><div key={goal.id} className="rounded-2xl border p-4"><div className="flex justify-between"><Badge variant="secondary">{goal.area}</Badge><span className="text-xs text-muted-foreground">{goal.currentValue}/{goal.targetValue} {goal.unit}</span></div><p className="mt-3 font-medium">{goal.title}</p><Progress className="mt-3" value={Math.min(100,goal.currentValue/goal.targetValue*100)}/></div>)}{!goals.length&&<p className="text-sm text-muted-foreground">No saved goals yet. Try “create a goal to train at the gym 4 times a week”.</p>}</div></CardContent></Card><Card><CardHeader><CardTitle>Today’s execution list</CardTitle><CardDescription>{completedCount} of {priorities.length} tasks complete.</CardDescription><CardAction><Button onClick={()=>{setActiveSection('Today');setAddingTask(true)}}><Plus/>Add task</Button></CardAction></CardHeader><CardContent className="space-y-2">{priorities.map((priority)=>{const done=Boolean(priority.completed);return <button key={priority.id} onClick={()=>togglePriority(priority.id)} className="flex w-full items-center gap-3 rounded-xl border p-4 text-left hover:bg-muted/50"><span className={`grid size-6 place-items-center rounded-full border ${done?'border-primary bg-primary text-primary-foreground':''}`}>{done&&<Check className="size-3"/>}</span><span className={done?'line-through text-muted-foreground':'font-medium'}>{priority.title}</span><span className="ml-auto text-xs text-muted-foreground">{priority.meta}</span></button>})}</CardContent></Card></>}
+                {activeSection === 'Goals' && (
+                  <>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Goals command centre</CardTitle>
+                        <CardDescription>
+                          Track outcomes separately from today’s actionable
+                          priorities.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <form
+                          className="grid gap-3 sm:grid-cols-5"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            void saveLife({ type: 'goal', ...goalDraft }).then(
+                              () => setGoalDraft({ ...goalDraft, title: '' }),
+                            );
+                          }}
+                        >
+                          <Input
+                            className="sm:col-span-2"
+                            placeholder="Goal, e.g. build strength"
+                            value={goalDraft.title}
+                            onChange={(e) =>
+                              setGoalDraft({
+                                ...goalDraft,
+                                title: e.target.value,
+                              })
+                            }
+                          />
+                          <select
+                            className="h-9 rounded-lg border bg-background px-3 text-sm"
+                            value={goalDraft.area}
+                            onChange={(e) =>
+                              setGoalDraft({
+                                ...goalDraft,
+                                area: e.target.value,
+                              })
+                            }
+                          >
+                            <option>Fitness</option>
+                            <option>Career</option>
+                            <option>Finance</option>
+                            <option>Personal</option>
+                          </select>
+                          <Input
+                            type="number"
+                            placeholder="Target"
+                            value={goalDraft.targetValue}
+                            onChange={(e) =>
+                              setGoalDraft({
+                                ...goalDraft,
+                                targetValue: e.target.value,
+                              })
+                            }
+                          />
+                          <Button
+                            type="submit"
+                            disabled={!goalDraft.title.trim()}
+                          >
+                            Add goal
+                          </Button>
+                        </form>
+                        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                          {goals.map((goal) => (
+                            <div
+                              key={goal.id}
+                              className="rounded-2xl border p-4"
+                            >
+                              <div className="flex justify-between">
+                                <Badge variant="secondary">{goal.area}</Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  {goal.currentValue}/{goal.targetValue}{' '}
+                                  {goal.unit}
+                                </span>
+                              </div>
+                              <p className="mt-3 font-medium">{goal.title}</p>
+                              <Progress
+                                className="mt-3"
+                                value={Math.min(
+                                  100,
+                                  (goal.currentValue / goal.targetValue) * 100,
+                                )}
+                              />
+                            </div>
+                          ))}
+                          {!goals.length && (
+                            <p className="text-sm text-muted-foreground">
+                              No saved goals yet. Try “create a goal to train at
+                              the gym 4 times a week”.
+                            </p>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Today’s execution list</CardTitle>
+                        <CardDescription>
+                          {completedCount} of {priorities.length} tasks
+                          complete.
+                        </CardDescription>
+                        <CardAction>
+                          <Button
+                            onClick={() => {
+                              setActiveSection('Today');
+                              setAddingTask(true);
+                            }}
+                          >
+                            <Plus />
+                            Add task
+                          </Button>
+                        </CardAction>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        {priorities.map((priority) => {
+                          const done = Boolean(priority.completed);
+                          return (
+                            <button
+                              key={priority.id}
+                              onClick={() => togglePriority(priority.id)}
+                              className="flex w-full items-center gap-3 rounded-xl border p-4 text-left hover:bg-muted/50"
+                            >
+                              <span
+                                className={`grid size-6 place-items-center rounded-full border ${done ? 'border-primary bg-primary text-primary-foreground' : ''}`}
+                              >
+                                {done && <Check className="size-3" />}
+                              </span>
+                              <span
+                                className={
+                                  done
+                                    ? 'line-through text-muted-foreground'
+                                    : 'font-medium'
+                                }
+                              >
+                                {priority.title}
+                              </span>
+                              <span className="ml-auto text-xs text-muted-foreground">
+                                {priority.meta}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </CardContent>
+                    </Card>
+                  </>
+                )}
 
-              {activeSection === 'Money' && <><div className="grid gap-5 md:grid-cols-3"><Card><CardHeader><CardDescription>Current balance</CardDescription><CardTitle className="text-3xl">${(account.balanceCents/100).toLocaleString()}</CardTitle></CardHeader><CardContent><form className="flex gap-2" onSubmit={(e)=>{e.preventDefault();void saveLife({type:'balance',balance:balanceDraft}).then(()=>setBalanceDraft(''))}}><Input type="number" step="0.01" placeholder="New balance" value={balanceDraft} onChange={(e)=>setBalanceDraft(e.target.value)}/><Button>Update</Button></form></CardContent></Card><Card><CardHeader><CardDescription>Spent this month</CardDescription><CardTitle className="text-3xl">${(monthSpent/100).toFixed(2)}</CardTitle></CardHeader><CardContent><Progress value={budgetUsed}/><p className="mt-2 text-xs text-muted-foreground">{budgetUsed}% of ${(account.monthlyBudgetCents/100).toFixed(2)} budget</p></CardContent></Card><Card><CardHeader><CardDescription>Spent today</CardDescription><CardTitle className="text-3xl">${(todayExpenses/100).toFixed(2)}</CardTitle></CardHeader><CardContent><p className="text-sm text-muted-foreground">{expenses.filter((e)=>e.spentOn===todayKey).length} transactions today</p></CardContent></Card></div><Card><CardHeader><CardTitle>Daily expense tracker</CardTitle><CardDescription>Add manually or tell the coach “log $18 for lunch”.</CardDescription></CardHeader><CardContent><form className="grid gap-3 sm:grid-cols-4" onSubmit={(e)=>{e.preventDefault();void saveLife({type:'expense',...expenseDraft}).then(()=>setExpenseDraft({...expenseDraft,amount:'',note:''}))}}><Input required type="number" step="0.01" placeholder="Amount" value={expenseDraft.amount} onChange={(e)=>setExpenseDraft({...expenseDraft,amount:e.target.value})}/><select className="h-9 rounded-lg border bg-background px-3 text-sm" value={expenseDraft.category} onChange={(e)=>setExpenseDraft({...expenseDraft,category:e.target.value})}><option>Food</option><option>Transport</option><option>Bills</option><option>Health</option><option>Shopping</option><option>Other</option></select><Input required placeholder="What was it for?" value={expenseDraft.note} onChange={(e)=>setExpenseDraft({...expenseDraft,note:e.target.value})}/><Button>Add expense</Button></form><div className="mt-5 divide-y">{expenses.slice(0,12).map((item)=><div key={item.id} className="flex items-center py-3"><div><p className="font-medium">{item.note}</p><p className="text-xs text-muted-foreground">{item.category} · {item.spentOn}</p></div><p className="ml-auto font-semibold">-${(item.amountCents/100).toFixed(2)}</p></div>)}{!expenses.length&&<p className="py-5 text-sm text-muted-foreground">No expenses logged this month.</p>}</div></CardContent></Card></>}
+                {activeSection === 'Money' && (
+                  <>
+                    <div className="grid gap-5 md:grid-cols-3">
+                      <Card>
+                        <CardHeader>
+                          <CardDescription>Current balance</CardDescription>
+                          <CardTitle className="text-3xl">
+                            ${(account.balanceCents / 100).toLocaleString()}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <form
+                            className="flex gap-2"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              void saveLife({
+                                type: 'balance',
+                                balance: balanceDraft,
+                              }).then(() => setBalanceDraft(''));
+                            }}
+                          >
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="New balance"
+                              value={balanceDraft}
+                              onChange={(e) => setBalanceDraft(e.target.value)}
+                            />
+                            <Button>Update</Button>
+                          </form>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader>
+                          <CardDescription>Spent this month</CardDescription>
+                          <CardTitle className="text-3xl">
+                            ${(monthSpent / 100).toFixed(2)}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <Progress value={budgetUsed} />
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            {budgetUsed}% of $
+                            {(account.monthlyBudgetCents / 100).toFixed(2)}{' '}
+                            budget
+                          </p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader>
+                          <CardDescription>Spent today</CardDescription>
+                          <CardTitle className="text-3xl">
+                            ${(todayExpenses / 100).toFixed(2)}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-sm text-muted-foreground">
+                            {
+                              expenses.filter((e) => e.spentOn === todayKey)
+                                .length
+                            }{' '}
+                            transactions today
+                          </p>
+                        </CardContent>
+                      </Card>
+                    </div>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Daily expense tracker</CardTitle>
+                        <CardDescription>
+                          Add manually or tell the coach “log $18 for lunch”.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <form
+                          className="grid gap-3 sm:grid-cols-4"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            void saveLife({
+                              type: 'expense',
+                              ...expenseDraft,
+                            }).then(() =>
+                              setExpenseDraft({
+                                ...expenseDraft,
+                                amount: '',
+                                note: '',
+                              }),
+                            );
+                          }}
+                        >
+                          <Input
+                            required
+                            type="number"
+                            step="0.01"
+                            placeholder="Amount"
+                            value={expenseDraft.amount}
+                            onChange={(e) =>
+                              setExpenseDraft({
+                                ...expenseDraft,
+                                amount: e.target.value,
+                              })
+                            }
+                          />
+                          <select
+                            className="h-9 rounded-lg border bg-background px-3 text-sm"
+                            value={expenseDraft.category}
+                            onChange={(e) =>
+                              setExpenseDraft({
+                                ...expenseDraft,
+                                category: e.target.value,
+                              })
+                            }
+                          >
+                            <option>Food</option>
+                            <option>Transport</option>
+                            <option>Bills</option>
+                            <option>Health</option>
+                            <option>Shopping</option>
+                            <option>Other</option>
+                          </select>
+                          <Input
+                            required
+                            placeholder="What was it for?"
+                            value={expenseDraft.note}
+                            onChange={(e) =>
+                              setExpenseDraft({
+                                ...expenseDraft,
+                                note: e.target.value,
+                              })
+                            }
+                          />
+                          <Button>Add expense</Button>
+                        </form>
+                        <div className="mt-5 divide-y">
+                          {expenses.slice(0, 12).map((item) => (
+                            <div
+                              key={item.id}
+                              className="flex items-center py-3"
+                            >
+                              <div>
+                                <p className="font-medium">{item.note}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {item.category} · {item.spentOn}
+                                </p>
+                              </div>
+                              <p className="ml-auto font-semibold">
+                                -${(item.amountCents / 100).toFixed(2)}
+                              </p>
+                            </div>
+                          ))}
+                          {!expenses.length && (
+                            <p className="py-5 text-sm text-muted-foreground">
+                              No expenses logged this month.
+                            </p>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </>
+                )}
 
-              {activeSection === 'Wellbeing' && <><Card><CardHeader><CardTitle>Recovery dashboard</CardTitle><CardDescription>Sleep, energy, mood, and soreness shape your daily workload.</CardDescription><CardAction><Button onClick={()=>{setActiveSection('Today');setEditingCheckin(true)}}>{checkin?'Update check-in':'Start check-in'}</Button></CardAction></CardHeader><CardContent><div className="grid gap-4 sm:grid-cols-4">{[['Readiness',readinessScore],['Sleep',checkin?`${Math.floor(checkin.sleepMinutes/60)}h ${checkin.sleepMinutes%60}m`:'—'],['Energy',checkin?`${checkin.energy}/5`:'—'],['Load',recoveryDay?'Reduce':'Normal']].map(([label,value])=><div key={label} className="rounded-2xl bg-muted p-5"><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold">{value}</p></div>)}</div></CardContent></Card><Card><CardHeader><CardTitle>Workout & nutrition log</CardTitle><CardDescription>Track training, meals, calories, and protein. This is coaching support, not medical advice.</CardDescription></CardHeader><CardContent><form className="grid gap-3 sm:grid-cols-6" onSubmit={(e)=>{e.preventDefault();void saveLife({type:'health',...healthDraft}).then(()=>setHealthDraft({...healthDraft,title:'',detail:'',calories:'',proteinGrams:''}))}}><select className="h-9 rounded-lg border bg-background px-3 text-sm" value={healthDraft.kind} onChange={(e)=>setHealthDraft({...healthDraft,kind:e.target.value as 'workout'|'meal'})}><option value="workout">Workout</option><option value="meal">Meal</option></select><Input className="sm:col-span-2" required placeholder={healthDraft.kind==='workout'?'Strength session':'Chicken rice bowl'} value={healthDraft.title} onChange={(e)=>setHealthDraft({...healthDraft,title:e.target.value})}/>{healthDraft.kind==='workout'?<Input type="number" placeholder="Minutes" value={healthDraft.durationMinutes} onChange={(e)=>setHealthDraft({...healthDraft,durationMinutes:e.target.value})}/>:<><Input type="number" placeholder="Calories" value={healthDraft.calories} onChange={(e)=>setHealthDraft({...healthDraft,calories:e.target.value})}/><Input type="number" placeholder="Protein g" value={healthDraft.proteinGrams} onChange={(e)=>setHealthDraft({...healthDraft,proteinGrams:e.target.value})}/></>}<Button className={healthDraft.kind==='workout'?'sm:col-span-2':''}>Log {healthDraft.kind}</Button></form><div className="mt-5 grid gap-3 sm:grid-cols-2">{healthLogs.slice(0,8).map((log)=><div key={log.id} className="rounded-xl border p-4"><Badge variant="secondary">{log.kind}</Badge><p className="mt-2 font-medium">{log.title}</p><p className="text-xs text-muted-foreground">{log.logDate}{log.durationMinutes?` · ${log.durationMinutes} min`:''}{log.calories?` · ${log.calories} kcal`:''}{log.proteinGrams?` · ${log.proteinGrams}g protein`:''}</p></div>)}</div></CardContent></Card></>}
+                {activeSection === 'Wellbeing' && (
+                  <>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Recovery dashboard</CardTitle>
+                        <CardDescription>
+                          Sleep, energy, mood, and soreness shape your daily
+                          workload.
+                        </CardDescription>
+                        <CardAction>
+                          <Button
+                            onClick={() => {
+                              setActiveSection('Today');
+                              setEditingCheckin(true);
+                            }}
+                          >
+                            {checkin ? 'Update check-in' : 'Start check-in'}
+                          </Button>
+                        </CardAction>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid gap-4 sm:grid-cols-4">
+                          {[
+                            ['Readiness', readinessScore],
+                            [
+                              'Sleep',
+                              checkin
+                                ? `${Math.floor(checkin.sleepMinutes / 60)}h ${checkin.sleepMinutes % 60}m`
+                                : '—',
+                            ],
+                            ['Energy', checkin ? `${checkin.energy}/5` : '—'],
+                            ['Load', recoveryDay ? 'Reduce' : 'Normal'],
+                          ].map(([label, value]) => (
+                            <div
+                              key={label}
+                              className="rounded-2xl bg-muted p-5"
+                            >
+                              <p className="text-sm text-muted-foreground">
+                                {label}
+                              </p>
+                              <p className="mt-2 text-2xl font-semibold">
+                                {value}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Workout & nutrition log</CardTitle>
+                        <CardDescription>
+                          Track training, meals, calories, and protein. This is
+                          coaching support, not medical advice.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <form
+                          className="grid gap-3 sm:grid-cols-6"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            void saveLife({
+                              type: 'health',
+                              ...healthDraft,
+                            }).then(() =>
+                              setHealthDraft({
+                                ...healthDraft,
+                                title: '',
+                                detail: '',
+                                calories: '',
+                                proteinGrams: '',
+                              }),
+                            );
+                          }}
+                        >
+                          <select
+                            className="h-9 rounded-lg border bg-background px-3 text-sm"
+                            value={healthDraft.kind}
+                            onChange={(e) =>
+                              setHealthDraft({
+                                ...healthDraft,
+                                kind: e.target.value as 'workout' | 'meal',
+                              })
+                            }
+                          >
+                            <option value="workout">Workout</option>
+                            <option value="meal">Meal</option>
+                          </select>
+                          <Input
+                            className="sm:col-span-2"
+                            required
+                            placeholder={
+                              healthDraft.kind === 'workout'
+                                ? 'Strength session'
+                                : 'Chicken rice bowl'
+                            }
+                            value={healthDraft.title}
+                            onChange={(e) =>
+                              setHealthDraft({
+                                ...healthDraft,
+                                title: e.target.value,
+                              })
+                            }
+                          />
+                          {healthDraft.kind === 'workout' ? (
+                            <Input
+                              type="number"
+                              placeholder="Minutes"
+                              value={healthDraft.durationMinutes}
+                              onChange={(e) =>
+                                setHealthDraft({
+                                  ...healthDraft,
+                                  durationMinutes: e.target.value,
+                                })
+                              }
+                            />
+                          ) : (
+                            <>
+                              <Input
+                                type="number"
+                                placeholder="Calories"
+                                value={healthDraft.calories}
+                                onChange={(e) =>
+                                  setHealthDraft({
+                                    ...healthDraft,
+                                    calories: e.target.value,
+                                  })
+                                }
+                              />
+                              <Input
+                                type="number"
+                                placeholder="Protein g"
+                                value={healthDraft.proteinGrams}
+                                onChange={(e) =>
+                                  setHealthDraft({
+                                    ...healthDraft,
+                                    proteinGrams: e.target.value,
+                                  })
+                                }
+                              />
+                            </>
+                          )}
+                          <Button
+                            className={
+                              healthDraft.kind === 'workout'
+                                ? 'sm:col-span-2'
+                                : ''
+                            }
+                          >
+                            Log {healthDraft.kind}
+                          </Button>
+                        </form>
+                        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                          {healthLogs.slice(0, 8).map((log) => (
+                            <div key={log.id} className="rounded-xl border p-4">
+                              <Badge variant="secondary">{log.kind}</Badge>
+                              <p className="mt-2 font-medium">{log.title}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {log.logDate}
+                                {log.durationMinutes
+                                  ? ` · ${log.durationMinutes} min`
+                                  : ''}
+                                {log.calories ? ` · ${log.calories} kcal` : ''}
+                                {log.proteinGrams
+                                  ? ` · ${log.proteinGrams}g protein`
+                                  : ''}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </>
+                )}
 
-              {activeSection === 'Insights' && <><Card><CardHeader><CardTitle>Personal analytics</CardTitle><CardDescription>Live signals calculated from your saved activity—not invented demo data.</CardDescription></CardHeader><CardContent className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">{[['Task completion',`${priorities.length?Math.round(completedCount/priorities.length*100):0}%`],['Readiness',readinessScore],['Plan blocks',planItems.length],['Monthly spend',`$${(monthSpent/100).toFixed(0)}`],['Workouts',workouts.length],['Meals logged',meals.length]].map(([label,value])=><div key={label} className="rounded-2xl border p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold">{value}</p></div>)}</CardContent></Card><div className="grid gap-5 md:grid-cols-2"><Card><CardHeader><CardTitle>Northstar observations</CardTitle></CardHeader><CardContent className="space-y-3 text-sm"><p>• {recoveryDay?'Recovery is limited; reduce workout intensity and protect one main priority.':'Your current readiness supports a normal workload.'}</p><p>• {budgetUsed>80?'Monthly spending is above 80% of budget; review discretionary expenses.':'Your logged spending remains within the current budget signal.'}</p><p>• {goals.length?`${goals.length} active goal${goals.length===1?'':'s'} need regular milestone updates.`:'Add one measurable goal to connect daily work with a larger outcome.'}</p></CardContent></Card><Card><CardHeader><CardTitle>AI daily briefing</CardTitle><CardDescription>Combine tasks, money, recovery, goals, workouts, meals, and your plan into one concise report.</CardDescription></CardHeader><CardContent><Button onClick={()=>{setCoachOpen(true);void askCoach(undefined,'Summarize my day')}}>Generate briefing</Button></CardContent></Card></div></>}
+                {activeSection === 'Insights' && (
+                  <>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Personal analytics</CardTitle>
+                        <CardDescription>
+                          Live signals calculated from your saved activity—not
+                          invented demo data.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+                        {[
+                          [
+                            'Task completion',
+                            `${priorities.length ? Math.round((completedCount / priorities.length) * 100) : 0}%`,
+                          ],
+                          ['Readiness', readinessScore],
+                          ['Plan blocks', planItems.length],
+                          [
+                            'Monthly spend',
+                            `$${(monthSpent / 100).toFixed(0)}`,
+                          ],
+                          ['Workouts', workouts.length],
+                          ['Meals logged', meals.length],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-2xl border p-4">
+                            <p className="text-xs text-muted-foreground">
+                              {label}
+                            </p>
+                            <p className="mt-2 text-2xl font-semibold">
+                              {value}
+                            </p>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                    <div className="grid gap-5 md:grid-cols-2">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Northstar observations</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3 text-sm">
+                          <p>
+                            •{' '}
+                            {recoveryDay
+                              ? 'Recovery is limited; reduce workout intensity and protect one main priority.'
+                              : 'Your current readiness supports a normal workload.'}
+                          </p>
+                          <p>
+                            •{' '}
+                            {budgetUsed > 80
+                              ? 'Monthly spending is above 80% of budget; review discretionary expenses.'
+                              : 'Your logged spending remains within the current budget signal.'}
+                          </p>
+                          <p>
+                            •{' '}
+                            {goals.length
+                              ? `${goals.length} active goal${goals.length === 1 ? '' : 's'} need regular milestone updates.`
+                              : 'Add one measurable goal to connect daily work with a larger outcome.'}
+                          </p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>AI daily briefing</CardTitle>
+                          <CardDescription>
+                            Combine tasks, money, recovery, goals, workouts,
+                            meals, and your plan into one concise report.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <Button
+                            onClick={() => {
+                              setCoachOpen(true);
+                              void askCoach(undefined, 'Summarize my day');
+                            }}
+                          >
+                            Generate briefing
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
 
           <div className="sticky bottom-4 mx-auto mt-7 flex max-w-2xl items-center gap-3 rounded-2xl border border-border bg-card/95 p-2.5 shadow-[0_18px_50px_-25px_rgba(23,50,42,.5)] backdrop-blur">
-            <Button onClick={startVoice} size="icon-lg" className={`rounded-xl ${listening ? 'animate-pulse bg-red-500 hover:bg-red-500/90' : ''}`} aria-label="Start voice conversation"><Mic /></Button>
-            <button onClick={() => setCoachOpen(true)} className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-medium">Ask Northstar anything…</span><span className="block truncate text-xs text-muted-foreground">Try “What should I do next?” or “Replan my afternoon”</span></button>
-            <div className={`hidden items-center gap-1 text-xs sm:flex ${listening ? 'font-medium text-red-600' : 'text-muted-foreground'}`}><Clock3 className="size-3.5" /> {listening ? 'Listening…' : 'Ready'}</div>
+            <Button
+              onClick={startVoice}
+              size="icon-lg"
+              className={`rounded-xl ${listening ? 'animate-pulse bg-red-500 hover:bg-red-500/90' : ''}`}
+              aria-label="Start voice conversation"
+            >
+              <Mic />
+            </Button>
+            <button
+              onClick={() => setCoachOpen(true)}
+              className="min-w-0 flex-1 text-left"
+            >
+              <span className="block truncate text-sm font-medium">
+                Ask Northstar anything…
+              </span>
+              <span className="block truncate text-xs text-muted-foreground">
+                Try “What should I do next?” or “Replan my afternoon”
+              </span>
+            </button>
+            <div
+              className={`hidden items-center gap-1 text-xs sm:flex ${listening ? 'font-medium text-red-600' : 'text-muted-foreground'}`}
+            >
+              <Clock3 className="size-3.5" />{' '}
+              {listening ? 'Listening…' : 'Ready'}
+            </div>
           </div>
 
           {reviewOpen && (
             <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/25 p-4 backdrop-blur-sm">
               <Card className="w-full max-w-md shadow-2xl">
-                <CardHeader><CardTitle>Evening review</CardTitle><CardDescription>Close the loop so tomorrow starts clearly.</CardDescription><CardAction><Button onClick={() => setReviewOpen(false)} variant="ghost" size="icon"><X /></Button></CardAction></CardHeader>
-                <CardContent><form onSubmit={saveReview} className="space-y-4">
-                  <label className="block text-xs font-medium">What was today’s biggest win?<Input className="mt-1" value={reviewDraft.win} onChange={(e) => setReviewDraft((d) => ({...d, win:e.target.value}))} required /></label>
-                  <label className="block text-xs font-medium">What should change tomorrow?<Textarea className="mt-1" value={reviewDraft.reflection} onChange={(e) => setReviewDraft((d) => ({...d, reflection:e.target.value}))} required /></label>
-                  <div><p className="mb-2 text-xs font-medium">Evening energy</p><div className="grid grid-cols-5 gap-1">{[1,2,3,4,5].map((score) => <button type="button" key={score} onClick={() => setReviewDraft((d) => ({...d, energy:score}))} className={`h-9 rounded-lg border text-sm ${reviewDraft.energy===score?'bg-primary text-primary-foreground':'bg-background'}`}>{score}</button>)}</div></div>
-                  <Button type="submit" className="w-full">Save review & close the day</Button>
-                </form></CardContent>
+                <CardHeader>
+                  <CardTitle>Evening review</CardTitle>
+                  <CardDescription>
+                    Close the loop so tomorrow starts clearly.
+                  </CardDescription>
+                  <CardAction>
+                    <Button
+                      onClick={() => setReviewOpen(false)}
+                      variant="ghost"
+                      size="icon"
+                    >
+                      <X />
+                    </Button>
+                  </CardAction>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={saveReview} className="space-y-4">
+                    <label className="block text-xs font-medium">
+                      What was today’s biggest win?
+                      <Input
+                        className="mt-1"
+                        value={reviewDraft.win}
+                        onChange={(e) =>
+                          setReviewDraft((d) => ({ ...d, win: e.target.value }))
+                        }
+                        required
+                      />
+                    </label>
+                    <label className="block text-xs font-medium">
+                      What should change tomorrow?
+                      <Textarea
+                        className="mt-1"
+                        value={reviewDraft.reflection}
+                        onChange={(e) =>
+                          setReviewDraft((d) => ({
+                            ...d,
+                            reflection: e.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    </label>
+                    <div>
+                      <p className="mb-2 text-xs font-medium">Evening energy</p>
+                      <div className="grid grid-cols-5 gap-1">
+                        {[1, 2, 3, 4, 5].map((score) => (
+                          <button
+                            type="button"
+                            key={score}
+                            onClick={() =>
+                              setReviewDraft((d) => ({ ...d, energy: score }))
+                            }
+                            className={`h-9 rounded-lg border text-sm ${reviewDraft.energy === score ? 'bg-primary text-primary-foreground' : 'bg-background'}`}
+                          >
+                            {score}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <Button type="submit" className="w-full">
+                      Save review & close the day
+                    </Button>
+                  </form>
+                </CardContent>
               </Card>
             </div>
           )}
 
-          {focusActive&&<div className="fixed inset-0 z-50 grid place-items-center bg-[#0d2f25]/70 p-4 backdrop-blur-md"><Card className="w-full max-w-lg overflow-hidden border-emerald-200 shadow-2xl"><CardHeader className="text-center"><CardAction><Button variant="ghost" size="icon" onClick={()=>{setFocusActive(false);setFocusRunning(false)}} aria-label="Close focus session"><X/></Button></CardAction><div className="mx-auto mb-3 grid size-12 place-items-center rounded-2xl bg-primary text-primary-foreground"><Sparkles/></div><CardTitle className="text-2xl">Focus session</CardTitle><CardDescription>{priorities.find(x=>!x.completed)?.title||'Your most important priority'}</CardDescription></CardHeader><CardContent className="text-center"><div className="mx-auto grid size-56 place-items-center rounded-full border-[12px] border-emerald-100 bg-gradient-to-br from-white to-emerald-50 shadow-inner"><div><p className="text-5xl font-semibold tabular-nums">{String(Math.floor(focusRemaining/60)).padStart(2,'0')}:{String(focusRemaining%60).padStart(2,'0')}</p><p className="mt-2 text-sm text-muted-foreground">{focusRemaining===0?'Session complete':'Stay with one thing'}</p></div></div><div className="mt-6 flex justify-center gap-3"><Button size="lg" onClick={()=>setFocusRunning(value=>!value)} disabled={focusRemaining===0}>{focusRunning?<><Pause/>Pause</>:<><Play/>Resume</>}</Button><Button size="lg" variant="outline" onClick={()=>{setFocusActive(false);setFocusRunning(false)}}>End session</Button></div><p className="mt-4 text-xs text-muted-foreground">You can close this session at any time. Your tasks remain unchanged.</p></CardContent></Card></div>}
+          {focusActive && (
+            <div className="fixed inset-0 z-50 grid place-items-center bg-[#0d2f25]/70 p-4 backdrop-blur-md">
+              <Card className="w-full max-w-lg overflow-hidden border-emerald-200 shadow-2xl">
+                <CardHeader className="text-center">
+                  <CardAction>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        setFocusActive(false);
+                        setFocusRunning(false);
+                      }}
+                      aria-label="Close focus session"
+                    >
+                      <X />
+                    </Button>
+                  </CardAction>
+                  <div className="mx-auto mb-3 grid size-12 place-items-center rounded-2xl bg-primary text-primary-foreground">
+                    <Sparkles />
+                  </div>
+                  <CardTitle className="text-2xl">Focus session</CardTitle>
+                  <CardDescription>
+                    {priorities.find((x) => !x.completed)?.title ||
+                      'Your most important priority'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="text-center">
+                  <div className="mx-auto grid size-56 place-items-center rounded-full border-[12px] border-emerald-100 bg-gradient-to-br from-white to-emerald-50 shadow-inner">
+                    <div>
+                      <p className="text-5xl font-semibold tabular-nums">
+                        {String(Math.floor(focusRemaining / 60)).padStart(
+                          2,
+                          '0',
+                        )}
+                        :{String(focusRemaining % 60).padStart(2, '0')}
+                      </p>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {focusRemaining === 0
+                          ? 'Session complete'
+                          : 'Stay with one thing'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-6 flex justify-center gap-3">
+                    <Button
+                      size="lg"
+                      onClick={() => setFocusRunning((value) => !value)}
+                      disabled={focusRemaining === 0}
+                    >
+                      {focusRunning ? (
+                        <>
+                          <Pause />
+                          Pause
+                        </>
+                      ) : (
+                        <>
+                          <Play />
+                          Resume
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      onClick={() => {
+                        setFocusActive(false);
+                        setFocusRunning(false);
+                      }}
+                    >
+                      End session
+                    </Button>
+                  </div>
+                  <p className="mt-4 text-xs text-muted-foreground">
+                    You can close this session at any time. Your tasks remain
+                    unchanged.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           {coachOpen && (
             <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/20 p-3 backdrop-blur-sm sm:items-center">
               <Card className="flex max-h-[82vh] w-full max-w-xl flex-col overflow-hidden shadow-2xl">
-                <CardHeader className="border-b"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground"><Sparkles className="size-4" /></span><div><CardTitle>Northstar coach</CardTitle><CardDescription>Personal guidance from today’s real context</CardDescription></div></div><CardAction><Button onClick={() => setCoachOpen(false)} variant="ghost" size="icon" aria-label="Close coach"><X /></Button></CardAction></CardHeader>
+                <CardHeader className="border-b">
+                  <div className="flex items-center gap-3">
+                    <span className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground">
+                      <Sparkles className="size-4" />
+                    </span>
+                    <div>
+                      <CardTitle>Northstar coach</CardTitle>
+                      <CardDescription>
+                        Personal guidance from today’s real context
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <CardAction>
+                    <Button
+                      onClick={closeCoach}
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Close coach"
+                    >
+                      <X />
+                    </Button>
+                  </CardAction>
+                </CardHeader>
                 <CardContent className="flex min-h-0 flex-1 flex-col p-0">
-                  {!viewer ? <div className="m-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950"><p className="font-medium">Sign in for private, personalized coaching</p><p className="mt-2 text-sm text-emerald-800">Northstar uses only your saved priorities and wellbeing check-in to guide the day.</p><a href="/signin-with-chatgpt?return_to=%2F" target="_top" className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"><LogIn className="size-4" />Continue with ChatGPT</a></div> : <>
-                    <div className="flex-1 space-y-3 overflow-y-auto p-5">{voiceError&&<div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{voiceError}</div>}{coachMessages.map((message, index) => <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[85%] whitespace-pre-line rounded-2xl px-4 py-3 text-sm leading-relaxed ${message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`}>{message.text}</div></div>)}{coachBusy && <div className="w-fit rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">Thinking through your day…</div>}</div>
-                    <div className="flex flex-wrap gap-2 border-t px-4 py-3">{['What should I do next?', 'Replan my afternoon', 'Should I reduce my workout?'].map((prompt) => <button key={prompt} onClick={() => void askCoach(undefined, prompt)} className="rounded-full border bg-background px-3 py-1.5 text-xs hover:bg-muted">{prompt}</button>)}</div>
-                    <form onSubmit={askCoach} className="flex gap-2 border-t p-4"><Input value={coachInput} onChange={(event) => setCoachInput(event.target.value)} placeholder="Ask about your day…" maxLength={500} aria-label="Message Northstar coach" /><Button type="submit" size="icon" disabled={!coachInput.trim() || coachBusy} aria-label="Send message"><Send /></Button></form>
-                  </>}
+                  {!viewer ? (
+                    <div className="m-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
+                      <p className="font-medium">
+                        Sign in for private, personalized coaching
+                      </p>
+                      <p className="mt-2 text-sm text-emerald-800">
+                        Northstar uses only your saved priorities and wellbeing
+                        check-in to guide the day.
+                      </p>
+                      <a
+                        href="/signin-with-chatgpt?return_to=%2F"
+                        target="_top"
+                        className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"
+                      >
+                        <LogIn className="size-4" />
+                        Continue with ChatGPT
+                      </a>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex-1 space-y-3 overflow-y-auto p-5">
+                        {voiceError && (
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                            {voiceError}
+                          </div>
+                        )}
+                        {coachMessages.map((message, index) => (
+                          <div
+                            key={index}
+                            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                          >
+                            <div
+                              className={`max-w-[85%] whitespace-pre-line rounded-2xl px-4 py-3 text-sm leading-relaxed ${message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`}
+                            >
+                              {message.text}
+                            </div>
+                          </div>
+                        ))}
+                        {coachBusy && (
+                          <div className="w-fit rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">
+                            Thinking through your day…
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2 border-t px-4 py-3">
+                        {[
+                          'What should I do next?',
+                          'Replan my afternoon',
+                          'Should I reduce my workout?',
+                        ].map((prompt) => (
+                          <button
+                            key={prompt}
+                            onClick={() => void askCoach(undefined, prompt)}
+                            className="rounded-full border bg-background px-3 py-1.5 text-xs hover:bg-muted"
+                          >
+                            {prompt}
+                          </button>
+                        ))}
+                      </div>
+                      <form
+                        onSubmit={askCoach}
+                        className="flex gap-2 border-t p-4"
+                      >
+                        <Input
+                          value={coachInput}
+                          onChange={(event) =>
+                            setCoachInput(event.target.value)
+                          }
+                          placeholder="Ask about your day…"
+                          maxLength={500}
+                          aria-label="Message Northstar coach"
+                        />
+                        <Button
+                          type="submit"
+                          size="icon"
+                          disabled={!coachInput.trim() || coachBusy}
+                          aria-label="Send message"
+                        >
+                          <Send />
+                        </Button>
+                      </form>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             </div>

@@ -3,50 +3,1412 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { ChartContainer } from '@/components/ui/chart';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
-import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, RadialBar, RadialBarChart, XAxis } from 'recharts';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  RadialBar,
+  RadialBarChart,
+  XAxis,
+} from 'recharts';
 
-type Section='Plan'|'Goals'|'Money'|'Wellbeing'|'Insights';
-type Expense={id:string;amountCents:number;category:string;note:string;spentOn:string};
-type Goal={id:string;title:string;area:string;targetValue:number;currentValue:number;unit:string;targetDate?:string;status:string};
-type HealthLog={id:string;logDate:string;kind:'workout'|'meal';title:string;detail:string;durationMinutes?:number;calories?:number;proteinGrams?:number};
-type Life={account:{balanceCents:number;currency:string;monthlyBudgetCents:number};expenses:Expense[];goals:Goal[];healthLogs:HealthLog[];healthTargets:{dailyCalories:number;dailyProteinGrams:number;dailyWaterMl:number;dailySteps:number;weeklyWorkouts:number}};
-type PlanItem={id:string;time:string;title:string;type:string;duration:number};
-const empty:Life={account:{balanceCents:0,currency:'AUD',monthlyBudgetCents:0},expenses:[],goals:[],healthLogs:[],healthTargets:{dailyCalories:2200,dailyProteinGrams:120,dailyWaterMl:2500,dailySteps:8000,weeklyWorkouts:4}};
-const day=()=>new Date().toLocaleDateString('en-CA');
+type Section = 'Plan' | 'Goals' | 'Money' | 'Wellbeing' | 'Insights';
+type Expense = {
+  id: string;
+  amountCents: number;
+  category: string;
+  note: string;
+  spentOn: string;
+};
+type Goal = {
+  id: string;
+  title: string;
+  area: string;
+  targetValue: number;
+  currentValue: number;
+  unit: string;
+  targetDate?: string;
+  status: string;
+};
+type HealthLog = {
+  id: string;
+  logDate: string;
+  kind: 'workout' | 'meal';
+  title: string;
+  detail: string;
+  durationMinutes?: number;
+  calories?: number;
+  proteinGrams?: number;
+};
+type Life = {
+  account: {
+    balanceCents: number;
+    currency: string;
+    monthlyBudgetCents: number;
+  };
+  expenses: Expense[];
+  goals: Goal[];
+  healthLogs: HealthLog[];
+  healthTargets: {
+    dailyCalories: number;
+    dailyProteinGrams: number;
+    dailyWaterMl: number;
+    dailySteps: number;
+    weeklyWorkouts: number;
+  };
+};
+type PlanItem = {
+  id: string;
+  time: string;
+  title: string;
+  type: string;
+  duration: number;
+};
+const empty: Life = {
+  account: { balanceCents: 0, currency: 'AUD', monthlyBudgetCents: 0 },
+  expenses: [],
+  goals: [],
+  healthLogs: [],
+  healthTargets: {
+    dailyCalories: 2200,
+    dailyProteinGrams: 120,
+    dailyWaterMl: 2500,
+    dailySteps: 8000,
+    weeklyWorkouts: 4,
+  },
+};
+const day = () => new Date().toLocaleDateString('en-CA');
 
-export function LifeWorkspace({section,signedIn,askCoach}:{section:Section;signedIn:boolean;askCoach:(message:string)=>void}){
- const[data,setData]=useState<Life>(empty),[plan,setPlan]=useState<PlanItem[]>([]),[notice,setNotice]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
- const[money,setMoney]=useState({balance:'',monthlyBudget:''}),[expense,setExpense]=useState({amount:'',category:'Food',note:'',date:day()}),[goal,setGoal]=useState({title:'',area:'Fitness',targetValue:'100',currentValue:'0',unit:'%',targetDate:''}),[health,setHealth]=useState({kind:'workout' as 'workout'|'meal',title:'',detail:'',durationMinutes:'45',calories:'',proteinGrams:'',date:day()}),[targets,setTargets]=useState(empty.healthTargets),[planDraft,setPlanDraft]=useState({time:'09:00',title:'',type:'Focus',duration:'45'}),[editing,setEditing]=useState<{type:'expense'|'goal'|'health';id:string}|null>(null);
- const load=useCallback(async()=>{if(!signedIn)return;const[r,p]=await Promise.all([fetch('/api/life',{cache:'no-store'}),fetch(`/api/plan?date=${day()}`,{cache:'no-store'})]);if(r.ok){const next=await r.json() as Life;setData(next);setTargets(next.healthTargets);}if(p.ok){const next=await p.json() as {plan:{items:PlanItem[]}|null};setPlan(next.plan?.items??[]);}},[signedIn]);
- useEffect(()=>{void load()},[load]);
- const mutate=async(method:string,payload?:Record<string,unknown>,query='')=>{setBusy(true);setError('');const response=await fetch(`/api/life${query}`,{method,headers:{'content-type':'application/json'},body:payload?JSON.stringify(payload):undefined});const result=await response.json() as Life&{error?:string};if(!response.ok)setError(result.error||'That change could not be saved.');else{setData(result);setTargets(result.healthTargets);setNotice('Saved successfully.');setEditing(null);}setBusy(false);};
- const spent=data.expenses.reduce((s,x)=>s+x.amountCents,0),safe=Math.max(0,data.account.balanceCents-spent),budgetPct=data.account.monthlyBudgetCents?Math.min(100,spent/data.account.monthlyBudgetCents*100):0,lastFive=data.expenses.slice(0,5);
- const todayMeals=data.healthLogs.filter(x=>x.kind==='meal'&&x.logDate===day()),todayProtein=todayMeals.reduce((s,x)=>s+(x.proteinGrams||0),0),todayCalories=todayMeals.reduce((s,x)=>s+(x.calories||0),0),weekWorkouts=data.healthLogs.filter(x=>x.kind==='workout').slice(0,7).length;
- const savePlan=async(items:PlanItem[])=>{setBusy(true);const response=await fetch('/api/plan',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({date:day(),items})});if(response.ok){setPlan(items);setNotice('Plan saved.')}else setError('Plan could not be saved.');setBusy(false)};
- if(!signedIn)return <Card><CardHeader><CardTitle>Sign in to use this module</CardTitle><CardDescription>Your records are private and connected to your Northstar account.</CardDescription></CardHeader></Card>;
- return <div className="space-y-5">{notice&&<output className="block rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{notice}</output>}{error&&<div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{error}</div>}<VisualAnalytics section={section} data={data} plan={plan} spent={spent} safe={safe} budgetPct={budgetPct} todayProtein={todayProtein} todayCalories={todayCalories} weekWorkouts={weekWorkouts} targets={targets}/>
- {section==='Money'&&<><div className="grid gap-4 md:grid-cols-3"><Metric label="Safe to spend this month" value={`$${(safe/100).toLocaleString(undefined,{maximumFractionDigits:2})}`} note="Balance minus logged monthly expenses"/><Metric label="Spent this month" value={`$${(spent/100).toFixed(2)}`} note={`${Math.round(budgetPct)}% of budget`}/><Metric label="Current balance" value={`$${(data.account.balanceCents/100).toLocaleString()}`} note={`Budget $${(data.account.monthlyBudgetCents/100).toLocaleString()}`}/></div><Card><CardHeader><CardTitle>Money setup</CardTitle><CardDescription>Set your current balance and monthly spending limit.</CardDescription></CardHeader><CardContent><form className="grid gap-3 sm:grid-cols-3" onSubmit={(e)=>{e.preventDefault();void mutate('POST',{type:'money',...money}).then(()=>setMoney({balance:'',monthlyBudget:''}))}}><Input required type="number" step="0.01" placeholder="Current balance" value={money.balance} onChange={e=>setMoney({...money,balance:e.target.value})}/><Input required type="number" step="0.01" placeholder="Monthly budget" value={money.monthlyBudget} onChange={e=>setMoney({...money,monthlyBudget:e.target.value})}/><Button type="submit" disabled={busy}>Save money plan</Button></form></CardContent></Card><Card><CardHeader><CardTitle>{editing?.type==='expense'?'Edit expense':'Log an expense'}</CardTitle><CardDescription>Every transaction updates your safe-to-spend amount immediately.</CardDescription></CardHeader><CardContent><form className="grid gap-3 md:grid-cols-5" onSubmit={(e)=>{e.preventDefault();void mutate(editing?.type==='expense'?'PATCH':'POST',{type:'expense',id:editing?.id,...expense}).then(()=>setExpense({amount:'',category:'Food',note:'',date:day()}))}}><Input required type="number" step="0.01" placeholder="Amount" value={expense.amount} onChange={e=>setExpense({...expense,amount:e.target.value})}/><Select value={expense.category} onChange={v=>setExpense({...expense,category:v})} options={['Food','Transport','Bills','Health','Shopping','Entertainment','Other']}/><Input required placeholder="Description" value={expense.note} onChange={e=>setExpense({...expense,note:e.target.value})}/><Input required type="date" value={expense.date} onChange={e=>setExpense({...expense,date:e.target.value})}/><Button type="submit" disabled={busy}>{editing?'Update':'Add'} expense</Button></form></CardContent></Card><Card><CardHeader><CardTitle>Recent money activity</CardTitle><CardDescription>Your last five purchases, with full edit and delete controls.</CardDescription></CardHeader><CardContent className="divide-y">{lastFive.map(x=><div key={x.id} className="flex items-center gap-3 py-3"><div><p className="font-medium">{x.note}</p><p className="text-xs text-muted-foreground">{x.category} · {x.spentOn}</p></div><p className="ml-auto font-semibold">-${(x.amountCents/100).toFixed(2)}</p><Button size="icon-sm" variant="ghost" onClick={()=>{setEditing({type:'expense',id:x.id});setExpense({amount:String(x.amountCents/100),category:x.category,note:x.note,date:x.spentOn})}}><Pencil/></Button><Button size="icon-sm" variant="destructive" onClick={()=>void mutate('DELETE',undefined,`?type=expense&id=${encodeURIComponent(x.id)}`)}><Trash2/></Button></div>)}{!lastFive.length&&<Empty text="No expenses yet. Add one above or tell the coach “log $18 for lunch”."/>}</CardContent></Card></>}
- {section==='Goals'&&<><Card><CardHeader><CardTitle>Goal system</CardTitle><CardDescription>Create measurable outcomes, update milestones, complete them, or remove them.</CardDescription></CardHeader><CardContent><form className="grid gap-3 md:grid-cols-4" onSubmit={(e)=>{e.preventDefault();void mutate(editing?.type==='goal'?'PATCH':'POST',{type:'goal',id:editing?.id,...goal,status:'active'}).then(()=>setGoal({title:'',area:'Fitness',targetValue:'100',currentValue:'0',unit:'%',targetDate:''}))}}><Input required className="md:col-span-2" placeholder="Goal title" value={goal.title} onChange={e=>setGoal({...goal,title:e.target.value})}/><Select value={goal.area} onChange={v=>setGoal({...goal,area:v})} options={['Fitness','Nutrition','Career','Finance','Personal']}/><Input type="date" value={goal.targetDate} onChange={e=>setGoal({...goal,targetDate:e.target.value})}/><Input required type="number" placeholder="Current" value={goal.currentValue} onChange={e=>setGoal({...goal,currentValue:e.target.value})}/><Input required type="number" placeholder="Target" value={goal.targetValue} onChange={e=>setGoal({...goal,targetValue:e.target.value})}/><Input required placeholder="Unit" value={goal.unit} onChange={e=>setGoal({...goal,unit:e.target.value})}/><Button type="submit" disabled={busy}>{editing?'Update':'Create'} goal</Button></form></CardContent></Card><div className="grid gap-4 md:grid-cols-2">{data.goals.map(x=><Card key={x.id}><CardHeader><Badge className="w-fit" variant="secondary">{x.area}</Badge><CardTitle>{x.title}</CardTitle><CardDescription>{x.currentValue} / {x.targetValue} {x.unit}{x.targetDate?` · due ${x.targetDate}`:''}</CardDescription></CardHeader><CardContent><Progress value={Math.min(100,x.currentValue/x.targetValue*100)}/><div className="mt-4 flex gap-2"><Button size="sm" onClick={()=>void mutate('PATCH',{type:'goal',...x,currentValue:x.targetValue,status:'complete'})}><Check/>Complete</Button><Button size="sm" variant="outline" onClick={()=>{setEditing({type:'goal',id:x.id});setGoal({title:x.title,area:x.area,targetValue:String(x.targetValue),currentValue:String(x.currentValue),unit:x.unit,targetDate:x.targetDate||''})}}><Pencil/>Edit</Button><Button className="ml-auto" size="icon-sm" variant="destructive" onClick={()=>void mutate('DELETE',undefined,`?type=goal&id=${encodeURIComponent(x.id)}`)}><Trash2/></Button></div></CardContent></Card>)}</div></>}
- {section==='Wellbeing'&&<><div className="grid gap-4 md:grid-cols-4"><Metric label="Protein today" value={`${todayProtein}g`} note={`Goal ${targets.dailyProteinGrams}g`}/><Metric label="Calories today" value={`${todayCalories}`} note={`Goal ${targets.dailyCalories} kcal`}/><Metric label="Workouts logged" value={`${weekWorkouts}`} note={`Weekly goal ${targets.weeklyWorkouts}`}/><Metric label="Hydration target" value={`${targets.dailyWaterMl/1000}L`} note={`${targets.dailySteps.toLocaleString()} step target`}/></div><Card><CardHeader><CardTitle>Health & nutrition targets</CardTitle><CardDescription>Set the daily and weekly goals Northstar uses for coaching.</CardDescription></CardHeader><CardContent><form className="grid gap-3 md:grid-cols-5" onSubmit={(e)=>{e.preventDefault();void mutate('POST',{type:'health_targets',...targets})}}>{([['dailyCalories','Calories'],['dailyProteinGrams','Protein g'],['dailyWaterMl','Water ml'],['dailySteps','Steps'],['weeklyWorkouts','Workouts/week']] as const).map(([k,l])=><label key={k} className="text-xs font-medium">{l}<Input className="mt-1" type="number" value={targets[k]} onChange={e=>setTargets({...targets,[k]:Number(e.target.value)})}/></label>)}<Button className="md:col-span-5" type="submit">Save health targets</Button></form></CardContent></Card><Card><CardHeader><CardTitle>{editing?.type==='health'?'Edit health entry':'Workout & meal journal'}</CardTitle><CardDescription>Log training or nutrition with detailed metrics.</CardDescription></CardHeader><CardContent><form className="grid gap-3 md:grid-cols-4" onSubmit={(e)=>{e.preventDefault();void mutate(editing?.type==='health'?'PATCH':'POST',{type:'health',id:editing?.id,...health}).then(()=>setHealth({kind:'workout',title:'',detail:'',durationMinutes:'45',calories:'',proteinGrams:'',date:day()}))}}><Select value={health.kind} onChange={v=>setHealth({...health,kind:v as 'workout'|'meal'})} options={['workout','meal']}/><Input required placeholder={health.kind==='meal'?'Meal name':'Workout name'} value={health.title} onChange={e=>setHealth({...health,title:e.target.value})}/><Input type="date" value={health.date} onChange={e=>setHealth({...health,date:e.target.value})}/><Input type="number" placeholder="Duration minutes" value={health.durationMinutes} onChange={e=>setHealth({...health,durationMinutes:e.target.value})}/><Input type="number" placeholder="Calories" value={health.calories} onChange={e=>setHealth({...health,calories:e.target.value})}/><Input type="number" placeholder="Protein grams" value={health.proteinGrams} onChange={e=>setHealth({...health,proteinGrams:e.target.value})}/><Textarea className="md:col-span-2" placeholder="Exercises, sets, ingredients or notes" value={health.detail} onChange={e=>setHealth({...health,detail:e.target.value})}/><Button className="md:col-span-4" type="submit">{editing?'Update':'Log'} {health.kind}</Button></form></CardContent></Card><div className="grid gap-3 md:grid-cols-2">{data.healthLogs.slice(0,12).map(x=><Card key={x.id}><CardHeader><Badge className="w-fit" variant="secondary">{x.kind}</Badge><CardTitle>{x.title}</CardTitle><CardDescription>{x.logDate}{x.durationMinutes?` · ${x.durationMinutes} min`:''}{x.calories?` · ${x.calories} kcal`:''}{x.proteinGrams?` · ${x.proteinGrams}g protein`:''}</CardDescription></CardHeader><CardContent><p className="text-sm text-muted-foreground">{x.detail||'No notes'}</p><div className="mt-3 flex gap-2"><Button size="sm" variant="outline" onClick={()=>{setEditing({type:'health',id:x.id});setHealth({kind:x.kind,title:x.title,detail:x.detail||'',durationMinutes:String(x.durationMinutes||''),calories:String(x.calories||''),proteinGrams:String(x.proteinGrams||''),date:x.logDate})}}><Pencil/>Edit</Button><Button size="sm" variant="destructive" onClick={()=>void mutate('DELETE',undefined,`?type=health&id=${encodeURIComponent(x.id)}`)}><Trash2/>Delete</Button></div></CardContent></Card>)}</div></>}
- {section==='Plan'&&<><Card><CardHeader><CardTitle>Smart day plan</CardTitle><CardDescription>Add, edit, reorder through time changes, or delete any block.</CardDescription><CardAction><Button onClick={async()=>{setBusy(true);const r=await fetch('/api/plan',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({date:day()})});if(r.ok){const d=await r.json() as {plan:{items:PlanItem[]}};setPlan(d.plan.items)}setBusy(false)}}>Generate from tasks</Button></CardAction></CardHeader><CardContent><form className="grid gap-3 md:grid-cols-5" onSubmit={(e)=>{e.preventDefault();const item={id:crypto.randomUUID(),time:planDraft.time,title:planDraft.title,type:planDraft.type,duration:Number(planDraft.duration)};void savePlan([...plan,item]);setPlanDraft({...planDraft,title:''})}}><Input type="time" value={planDraft.time} onChange={e=>setPlanDraft({...planDraft,time:e.target.value})}/><Input required className="md:col-span-2" placeholder="Plan block" value={planDraft.title} onChange={e=>setPlanDraft({...planDraft,title:e.target.value})}/><Input type="number" placeholder="Minutes" value={planDraft.duration} onChange={e=>setPlanDraft({...planDraft,duration:e.target.value})}/><Button type="submit"><Plus/>Add block</Button></form><div className="mt-5 space-y-2">{plan.map((x,i)=><div key={x.id} className="flex items-center gap-3 rounded-xl border p-3"><Input className="w-28" type="time" value={x.time} onChange={e=>{const next=plan.map((p,n)=>n===i?{...p,time:e.target.value}:p);setPlan(next)}}/><Input value={x.title} onChange={e=>setPlan(plan.map((p,n)=>n===i?{...p,title:e.target.value}:p))}/><Input className="w-24" type="number" value={x.duration} onChange={e=>setPlan(plan.map((p,n)=>n===i?{...p,duration:Number(e.target.value)}:p))}/><Button size="sm" variant="outline" onClick={()=>void savePlan(plan)}>Save</Button><Button size="icon-sm" variant="destructive" onClick={()=>void savePlan(plan.filter((_,n)=>n!==i))}><Trash2/></Button></div>)}</div></CardContent></Card></>}
- {section==='Insights'&&<><div className="grid gap-4 md:grid-cols-4"><Metric label="Active goals" value={String(data.goals.filter(x=>x.status==='active').length)} note="Across life areas"/><Metric label="Monthly spending" value={`$${(spent/100).toFixed(0)}`} note={`${Math.round(budgetPct)}% of budget`}/><Metric label="Protein progress" value={`${Math.round(todayProtein/Math.max(1,targets.dailyProteinGrams)*100)}%`} note={`${todayProtein}/${targets.dailyProteinGrams}g`}/><Metric label="Plan coverage" value={String(plan.length)} note="Blocks scheduled today"/></div><Card><CardHeader><CardTitle>Northstar briefing</CardTitle><CardDescription>A professional summary across priorities, finances, recovery, nutrition and goals.</CardDescription></CardHeader><CardContent className="flex flex-wrap gap-2"><Button onClick={()=>askCoach('Give me a professional daily briefing across my tasks, money, goals, fitness and nutrition.')}>Generate daily briefing</Button><Button variant="outline" onClick={()=>askCoach('What are the three most important improvements I should make this week?')}>Weekly recommendations</Button></CardContent></Card></>}
- </div>;
+export function LifeWorkspace({
+  section,
+  signedIn,
+  askCoach,
+}: {
+  section: Section;
+  signedIn: boolean;
+  askCoach: (message: string) => void;
+}) {
+  const [data, setData] = useState<Life>(empty),
+    [plan, setPlan] = useState<PlanItem[]>([]),
+    [notice, setNotice] = useState(''),
+    [error, setError] = useState(''),
+    [busy, setBusy] = useState(false);
+  const [money, setMoney] = useState({ balance: '', monthlyBudget: '' }),
+    [expense, setExpense] = useState({
+      amount: '',
+      category: 'Food',
+      note: '',
+      date: day(),
+    }),
+    [goal, setGoal] = useState({
+      title: '',
+      area: 'Fitness',
+      targetValue: '100',
+      currentValue: '0',
+      unit: '%',
+      targetDate: '',
+    }),
+    [health, setHealth] = useState({
+      kind: 'workout' as 'workout' | 'meal',
+      title: '',
+      detail: '',
+      durationMinutes: '45',
+      calories: '',
+      proteinGrams: '',
+      date: day(),
+    }),
+    [targets, setTargets] = useState(empty.healthTargets),
+    [planDraft, setPlanDraft] = useState({
+      time: '09:00',
+      title: '',
+      type: 'Focus',
+      duration: '45',
+    }),
+    [editing, setEditing] = useState<{
+      type: 'expense' | 'goal' | 'health';
+      id: string;
+    } | null>(null);
+  const load = useCallback(async () => {
+    if (!signedIn) return;
+    const [r, p] = await Promise.all([
+      fetch('/api/life', { cache: 'no-store' }),
+      fetch(`/api/plan?date=${day()}`, { cache: 'no-store' }),
+    ]);
+    if (r.ok) {
+      const next = (await r.json()) as Life;
+      setData(next);
+      setTargets(next.healthTargets);
+    }
+    if (p.ok) {
+      const next = (await p.json()) as { plan: { items: PlanItem[] } | null };
+      setPlan(next.plan?.items ?? []);
+    }
+  }, [signedIn]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const mutate = async (
+    method: string,
+    payload?: Record<string, unknown>,
+    query = '',
+  ) => {
+    setBusy(true);
+    setError('');
+    const response = await fetch(`/api/life${query}`, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body: payload ? JSON.stringify(payload) : undefined,
+    });
+    const result = (await response.json()) as Life & { error?: string };
+    if (!response.ok)
+      setError(result.error || 'That change could not be saved.');
+    else {
+      setData(result);
+      setTargets(result.healthTargets);
+      setNotice('Saved successfully.');
+      setEditing(null);
+    }
+    setBusy(false);
+  };
+  const spent = data.expenses.reduce((s, x) => s + x.amountCents, 0),
+    safe = Math.max(0, data.account.balanceCents - spent),
+    budgetPct = data.account.monthlyBudgetCents
+      ? Math.min(100, (spent / data.account.monthlyBudgetCents) * 100)
+      : 0,
+    lastFive = data.expenses.slice(0, 5);
+  const todayMeals = data.healthLogs.filter(
+      (x) => x.kind === 'meal' && x.logDate === day(),
+    ),
+    todayProtein = todayMeals.reduce((s, x) => s + (x.proteinGrams || 0), 0),
+    todayCalories = todayMeals.reduce((s, x) => s + (x.calories || 0), 0),
+    weekWorkouts = data.healthLogs
+      .filter((x) => x.kind === 'workout')
+      .slice(0, 7).length;
+  const savePlan = async (items: PlanItem[]) => {
+    setBusy(true);
+    const response = await fetch('/api/plan', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ date: day(), items }),
+    });
+    if (response.ok) {
+      setPlan(items);
+      setNotice('Plan saved.');
+    } else setError('Plan could not be saved.');
+    setBusy(false);
+  };
+  if (!signedIn)
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Sign in to use this module</CardTitle>
+          <CardDescription>
+            Your records are private and connected to your Northstar account.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  return (
+    <div className="space-y-5">
+      {notice && (
+        <output className="block rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          {notice}
+        </output>
+      )}
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+          {error}
+        </div>
+      )}
+      <VisualAnalytics
+        section={section}
+        data={data}
+        plan={plan}
+        spent={spent}
+        safe={safe}
+        budgetPct={budgetPct}
+        todayProtein={todayProtein}
+        todayCalories={todayCalories}
+        weekWorkouts={weekWorkouts}
+        targets={targets}
+      />
+      {section === 'Money' && (
+        <>
+          <div className="grid gap-4 md:grid-cols-3">
+            <Metric
+              label="Safe to spend this month"
+              value={`$${(safe / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
+              note="Balance minus logged monthly expenses"
+            />
+            <Metric
+              label="Spent this month"
+              value={`$${(spent / 100).toFixed(2)}`}
+              note={`${Math.round(budgetPct)}% of budget`}
+            />
+            <Metric
+              label="Current balance"
+              value={`$${(data.account.balanceCents / 100).toLocaleString()}`}
+              note={`Budget $${(data.account.monthlyBudgetCents / 100).toLocaleString()}`}
+            />
+          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Money setup</CardTitle>
+              <CardDescription>
+                Set your current balance and monthly spending limit.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form
+                className="grid gap-3 sm:grid-cols-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void mutate('POST', { type: 'money', ...money }).then(() =>
+                    setMoney({ balance: '', monthlyBudget: '' }),
+                  );
+                }}
+              >
+                <Input
+                  required
+                  type="number"
+                  step="0.01"
+                  placeholder="Current balance"
+                  value={money.balance}
+                  onChange={(e) =>
+                    setMoney({ ...money, balance: e.target.value })
+                  }
+                />
+                <Input
+                  required
+                  type="number"
+                  step="0.01"
+                  placeholder="Monthly budget"
+                  value={money.monthlyBudget}
+                  onChange={(e) =>
+                    setMoney({ ...money, monthlyBudget: e.target.value })
+                  }
+                />
+                <Button type="submit" disabled={busy}>
+                  Save money plan
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {editing?.type === 'expense'
+                  ? 'Edit expense'
+                  : 'Log an expense'}
+              </CardTitle>
+              <CardDescription>
+                Every transaction updates your safe-to-spend amount immediately.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form
+                className="grid gap-3 md:grid-cols-5"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void mutate(editing?.type === 'expense' ? 'PATCH' : 'POST', {
+                    type: 'expense',
+                    id: editing?.id,
+                    ...expense,
+                  }).then(() =>
+                    setExpense({
+                      amount: '',
+                      category: 'Food',
+                      note: '',
+                      date: day(),
+                    }),
+                  );
+                }}
+              >
+                <Input
+                  required
+                  type="number"
+                  step="0.01"
+                  placeholder="Amount"
+                  value={expense.amount}
+                  onChange={(e) =>
+                    setExpense({ ...expense, amount: e.target.value })
+                  }
+                />
+                <Select
+                  value={expense.category}
+                  onChange={(v) => setExpense({ ...expense, category: v })}
+                  options={[
+                    'Food',
+                    'Transport',
+                    'Bills',
+                    'Health',
+                    'Shopping',
+                    'Entertainment',
+                    'Other',
+                  ]}
+                />
+                <Input
+                  required
+                  placeholder="Description"
+                  value={expense.note}
+                  onChange={(e) =>
+                    setExpense({ ...expense, note: e.target.value })
+                  }
+                />
+                <Input
+                  required
+                  type="date"
+                  value={expense.date}
+                  onChange={(e) =>
+                    setExpense({ ...expense, date: e.target.value })
+                  }
+                />
+                <Button type="submit" disabled={busy}>
+                  {editing ? 'Update' : 'Add'} expense
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent money activity</CardTitle>
+              <CardDescription>
+                Your last five purchases, with full edit and delete controls.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="divide-y">
+              {lastFive.map((x) => (
+                <div key={x.id} className="flex items-center gap-3 py-3">
+                  <div>
+                    <p className="font-medium">{x.note}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {x.category} · {x.spentOn}
+                    </p>
+                  </div>
+                  <p className="ml-auto font-semibold">
+                    -${(x.amountCents / 100).toFixed(2)}
+                  </p>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setEditing({ type: 'expense', id: x.id });
+                      setExpense({
+                        amount: String(x.amountCents / 100),
+                        category: x.category,
+                        note: x.note,
+                        date: x.spentOn,
+                      });
+                    }}
+                  >
+                    <Pencil />
+                  </Button>
+                  <Button
+                    size="icon-sm"
+                    variant="destructive"
+                    onClick={() =>
+                      void mutate(
+                        'DELETE',
+                        undefined,
+                        `?type=expense&id=${encodeURIComponent(x.id)}`,
+                      )
+                    }
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+              ))}
+              {!lastFive.length && (
+                <Empty text="No expenses yet. Add one above or tell the coach “log $18 for lunch”." />
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
+      {section === 'Goals' && (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Goal system</CardTitle>
+              <CardDescription>
+                Create measurable outcomes, update milestones, complete them, or
+                remove them.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form
+                className="grid gap-3 md:grid-cols-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void mutate(editing?.type === 'goal' ? 'PATCH' : 'POST', {
+                    type: 'goal',
+                    id: editing?.id,
+                    ...goal,
+                    status: 'active',
+                  }).then(() =>
+                    setGoal({
+                      title: '',
+                      area: 'Fitness',
+                      targetValue: '100',
+                      currentValue: '0',
+                      unit: '%',
+                      targetDate: '',
+                    }),
+                  );
+                }}
+              >
+                <Input
+                  required
+                  className="md:col-span-2"
+                  placeholder="Goal title"
+                  value={goal.title}
+                  onChange={(e) => setGoal({ ...goal, title: e.target.value })}
+                />
+                <Select
+                  value={goal.area}
+                  onChange={(v) => setGoal({ ...goal, area: v })}
+                  options={[
+                    'Fitness',
+                    'Nutrition',
+                    'Career',
+                    'Finance',
+                    'Personal',
+                  ]}
+                />
+                <Input
+                  type="date"
+                  value={goal.targetDate}
+                  onChange={(e) =>
+                    setGoal({ ...goal, targetDate: e.target.value })
+                  }
+                />
+                <Input
+                  required
+                  type="number"
+                  placeholder="Current"
+                  value={goal.currentValue}
+                  onChange={(e) =>
+                    setGoal({ ...goal, currentValue: e.target.value })
+                  }
+                />
+                <Input
+                  required
+                  type="number"
+                  placeholder="Target"
+                  value={goal.targetValue}
+                  onChange={(e) =>
+                    setGoal({ ...goal, targetValue: e.target.value })
+                  }
+                />
+                <Input
+                  required
+                  placeholder="Unit"
+                  value={goal.unit}
+                  onChange={(e) => setGoal({ ...goal, unit: e.target.value })}
+                />
+                <Button type="submit" disabled={busy}>
+                  {editing ? 'Update' : 'Create'} goal
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+          <div className="grid gap-4 md:grid-cols-2">
+            {data.goals.map((x) => (
+              <Card key={x.id}>
+                <CardHeader>
+                  <Badge className="w-fit" variant="secondary">
+                    {x.area}
+                  </Badge>
+                  <CardTitle>{x.title}</CardTitle>
+                  <CardDescription>
+                    {x.currentValue} / {x.targetValue} {x.unit}
+                    {x.targetDate ? ` · due ${x.targetDate}` : ''}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Progress
+                    value={Math.min(
+                      100,
+                      (x.currentValue / x.targetValue) * 100,
+                    )}
+                  />
+                  <div className="mt-4 flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        void mutate('PATCH', {
+                          type: 'goal',
+                          ...x,
+                          currentValue: x.targetValue,
+                          status: 'complete',
+                        })
+                      }
+                    >
+                      <Check />
+                      Complete
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditing({ type: 'goal', id: x.id });
+                        setGoal({
+                          title: x.title,
+                          area: x.area,
+                          targetValue: String(x.targetValue),
+                          currentValue: String(x.currentValue),
+                          unit: x.unit,
+                          targetDate: x.targetDate || '',
+                        });
+                      }}
+                    >
+                      <Pencil />
+                      Edit
+                    </Button>
+                    <Button
+                      className="ml-auto"
+                      size="icon-sm"
+                      variant="destructive"
+                      onClick={() =>
+                        void mutate(
+                          'DELETE',
+                          undefined,
+                          `?type=goal&id=${encodeURIComponent(x.id)}`,
+                        )
+                      }
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </>
+      )}
+      {section === 'Wellbeing' && (
+        <>
+          <div className="grid gap-4 md:grid-cols-4">
+            <Metric
+              label="Protein today"
+              value={`${todayProtein}g`}
+              note={`Goal ${targets.dailyProteinGrams}g`}
+            />
+            <Metric
+              label="Calories today"
+              value={`${todayCalories}`}
+              note={`Goal ${targets.dailyCalories} kcal`}
+            />
+            <Metric
+              label="Workouts logged"
+              value={`${weekWorkouts}`}
+              note={`Weekly goal ${targets.weeklyWorkouts}`}
+            />
+            <Metric
+              label="Hydration target"
+              value={`${targets.dailyWaterMl / 1000}L`}
+              note={`${targets.dailySteps.toLocaleString()} step target`}
+            />
+          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Health & nutrition targets</CardTitle>
+              <CardDescription>
+                Set the daily and weekly goals Northstar uses for coaching.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form
+                className="grid gap-3 md:grid-cols-5"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void mutate('POST', { type: 'health_targets', ...targets });
+                }}
+              >
+                {(
+                  [
+                    ['dailyCalories', 'Calories'],
+                    ['dailyProteinGrams', 'Protein g'],
+                    ['dailyWaterMl', 'Water ml'],
+                    ['dailySteps', 'Steps'],
+                    ['weeklyWorkouts', 'Workouts/week'],
+                  ] as const
+                ).map(([k, l]) => (
+                  <label key={k} className="text-xs font-medium">
+                    {l}
+                    <NumberPicker
+                      value={targets[k]}
+                      onChange={(value) =>
+                        setTargets({ ...targets, [k]: value })
+                      }
+                      options={targetOptions(k)}
+                      suffix={l}
+                    />
+                  </label>
+                ))}
+                <Button className="md:col-span-5" type="submit">
+                  Save health targets
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {editing?.type === 'health'
+                  ? 'Edit health entry'
+                  : 'Workout & meal journal'}
+              </CardTitle>
+              <CardDescription>
+                Log training or nutrition with detailed metrics.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form
+                className="grid gap-3 md:grid-cols-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void mutate(editing?.type === 'health' ? 'PATCH' : 'POST', {
+                    type: 'health',
+                    id: editing?.id,
+                    ...health,
+                  }).then(() =>
+                    setHealth({
+                      kind: 'workout',
+                      title: '',
+                      detail: '',
+                      durationMinutes: '45',
+                      calories: '',
+                      proteinGrams: '',
+                      date: day(),
+                    }),
+                  );
+                }}
+              >
+                <Select
+                  value={health.kind}
+                  onChange={(v) =>
+                    setHealth({ ...health, kind: v as 'workout' | 'meal' })
+                  }
+                  options={['workout', 'meal']}
+                />
+                <Input
+                  required
+                  placeholder={
+                    health.kind === 'meal' ? 'Meal name' : 'Workout name'
+                  }
+                  value={health.title}
+                  onChange={(e) =>
+                    setHealth({ ...health, title: e.target.value })
+                  }
+                />
+                <Input
+                  type="date"
+                  value={health.date}
+                  onChange={(e) =>
+                    setHealth({ ...health, date: e.target.value })
+                  }
+                />
+                <Input
+                  type="number"
+                  placeholder="Duration minutes"
+                  value={health.durationMinutes}
+                  onChange={(e) =>
+                    setHealth({ ...health, durationMinutes: e.target.value })
+                  }
+                />
+                <Input
+                  type="number"
+                  placeholder="Calories"
+                  value={health.calories}
+                  onChange={(e) =>
+                    setHealth({ ...health, calories: e.target.value })
+                  }
+                />
+                <Input
+                  type="number"
+                  placeholder="Protein grams"
+                  value={health.proteinGrams}
+                  onChange={(e) =>
+                    setHealth({ ...health, proteinGrams: e.target.value })
+                  }
+                />
+                <Textarea
+                  className="md:col-span-2"
+                  placeholder="Exercises, sets, ingredients or notes"
+                  value={health.detail}
+                  onChange={(e) =>
+                    setHealth({ ...health, detail: e.target.value })
+                  }
+                />
+                <Button className="md:col-span-4" type="submit">
+                  {editing ? 'Update' : 'Log'} {health.kind}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+          <div className="grid gap-5 lg:grid-cols-2">
+            {(['workout', 'meal'] as const).map((kind) => (
+              <section
+                key={kind}
+                className="rounded-[28px] border border-border/60 bg-card/80 p-4 shadow-[0_20px_60px_-45px_rgba(15,45,35,.45)] backdrop-blur"
+              >
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[.18em] text-muted-foreground">
+                      {kind === 'workout' ? 'Training' : 'Nutrition'}
+                    </p>
+                    <h3 className="mt-1 text-xl font-semibold">
+                      {kind === 'workout' ? 'Workout history' : 'Meal journal'}
+                    </h3>
+                  </div>
+                  <Badge variant="secondary">
+                    {data.healthLogs.filter((x) => x.kind === kind).length}{' '}
+                    entries
+                  </Badge>
+                </div>
+                <div className="space-y-3">
+                  {data.healthLogs
+                    .filter((x) => x.kind === kind)
+                    .slice(0, 6)
+                    .map((x) => (
+                      <HealthRecord
+                        key={x.id}
+                        item={x}
+                        onEdit={() => {
+                          setEditing({ type: 'health', id: x.id });
+                          setHealth({
+                            kind: x.kind,
+                            title: x.title,
+                            detail: x.detail || '',
+                            durationMinutes: String(x.durationMinutes || ''),
+                            calories: String(x.calories || ''),
+                            proteinGrams: String(x.proteinGrams || ''),
+                            date: x.logDate,
+                          });
+                        }}
+                        onDelete={() =>
+                          void mutate(
+                            'DELETE',
+                            undefined,
+                            `?type=health&id=${encodeURIComponent(x.id)}`,
+                          )
+                        }
+                      />
+                    ))}
+                  {!data.healthLogs.some((x) => x.kind === kind) && (
+                    <Empty
+                      text={
+                        kind === 'workout'
+                          ? 'No workouts logged yet.'
+                          : 'No meals logged yet.'
+                      }
+                    />
+                  )}
+                </div>
+              </section>
+            ))}
+          </div>
+        </>
+      )}
+      {section === 'Plan' && (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Smart day plan</CardTitle>
+              <CardDescription>
+                Add, edit, reorder through time changes, or delete any block.
+              </CardDescription>
+              <CardAction>
+                <Button
+                  onClick={async () => {
+                    setBusy(true);
+                    const r = await fetch('/api/plan', {
+                      method: 'POST',
+                      headers: { 'content-type': 'application/json' },
+                      body: JSON.stringify({ date: day() }),
+                    });
+                    if (r.ok) {
+                      const d = (await r.json()) as {
+                        plan: { items: PlanItem[] };
+                      };
+                      setPlan(d.plan.items);
+                    }
+                    setBusy(false);
+                  }}
+                >
+                  Generate from tasks
+                </Button>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              <form
+                className="grid gap-3 md:grid-cols-5"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const item = {
+                    id: crypto.randomUUID(),
+                    time: planDraft.time,
+                    title: planDraft.title,
+                    type: planDraft.type,
+                    duration: Number(planDraft.duration),
+                  };
+                  void savePlan([...plan, item]);
+                  setPlanDraft({ ...planDraft, title: '' });
+                }}
+              >
+                <Input
+                  type="time"
+                  value={planDraft.time}
+                  onChange={(e) =>
+                    setPlanDraft({ ...planDraft, time: e.target.value })
+                  }
+                />
+                <Input
+                  required
+                  className="md:col-span-2"
+                  placeholder="Plan block"
+                  value={planDraft.title}
+                  onChange={(e) =>
+                    setPlanDraft({ ...planDraft, title: e.target.value })
+                  }
+                />
+                <Input
+                  type="number"
+                  placeholder="Minutes"
+                  value={planDraft.duration}
+                  onChange={(e) =>
+                    setPlanDraft({ ...planDraft, duration: e.target.value })
+                  }
+                />
+                <Button type="submit">
+                  <Plus />
+                  Add block
+                </Button>
+              </form>
+              <div className="mt-5 space-y-2">
+                {plan.map((x, i) => (
+                  <div
+                    key={x.id}
+                    className="flex items-center gap-3 rounded-xl border p-3"
+                  >
+                    <Input
+                      className="w-28"
+                      type="time"
+                      value={x.time}
+                      onChange={(e) => {
+                        const next = plan.map((p, n) =>
+                          n === i ? { ...p, time: e.target.value } : p,
+                        );
+                        setPlan(next);
+                      }}
+                    />
+                    <Input
+                      value={x.title}
+                      onChange={(e) =>
+                        setPlan(
+                          plan.map((p, n) =>
+                            n === i ? { ...p, title: e.target.value } : p,
+                          ),
+                        )
+                      }
+                    />
+                    <Input
+                      className="w-24"
+                      type="number"
+                      value={x.duration}
+                      onChange={(e) =>
+                        setPlan(
+                          plan.map((p, n) =>
+                            n === i
+                              ? { ...p, duration: Number(e.target.value) }
+                              : p,
+                          ),
+                        )
+                      }
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void savePlan(plan)}
+                    >
+                      Save
+                    </Button>
+                    <Button
+                      size="icon-sm"
+                      variant="destructive"
+                      onClick={() =>
+                        void savePlan(plan.filter((_, n) => n !== i))
+                      }
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
+      {section === 'Insights' && (
+        <>
+          <div className="grid gap-4 md:grid-cols-4">
+            <Metric
+              label="Active goals"
+              value={String(
+                data.goals.filter((x) => x.status === 'active').length,
+              )}
+              note="Across life areas"
+            />
+            <Metric
+              label="Monthly spending"
+              value={`$${(spent / 100).toFixed(0)}`}
+              note={`${Math.round(budgetPct)}% of budget`}
+            />
+            <Metric
+              label="Protein progress"
+              value={`${Math.round((todayProtein / Math.max(1, targets.dailyProteinGrams)) * 100)}%`}
+              note={`${todayProtein}/${targets.dailyProteinGrams}g`}
+            />
+            <Metric
+              label="Plan coverage"
+              value={String(plan.length)}
+              note="Blocks scheduled today"
+            />
+          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Northstar briefing</CardTitle>
+              <CardDescription>
+                A professional summary across priorities, finances, recovery,
+                nutrition and goals.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              <Button
+                onClick={() =>
+                  askCoach(
+                    'Give me a professional daily briefing across my tasks, money, goals, fitness and nutrition.',
+                  )
+                }
+              >
+                Generate daily briefing
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  askCoach(
+                    'What are the three most important improvements I should make this week?',
+                  )
+                }
+              >
+                Weekly recommendations
+              </Button>
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
 }
-function VisualAnalytics({section,data,plan,spent,safe,budgetPct,todayProtein,todayCalories,weekWorkouts,targets}:{section:Section;data:Life;plan:PlanItem[];spent:number;safe:number;budgetPct:number;todayProtein:number;todayCalories:number;weekWorkouts:number;targets:Life['healthTargets']}){
- const category=useMemo(()=>{const totals=new Map<string,number>();data.expenses.forEach(x=>totals.set(x.category,(totals.get(x.category)||0)+x.amountCents/100));return [...totals].map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value).slice(0,6)},[data.expenses]);
- const goalData=data.goals.slice(0,6).map(x=>({name:x.title.length>16?`${x.title.slice(0,16)}…`:x.title,progress:Math.min(100,Math.round(x.currentValue/Math.max(1,x.targetValue)*100))}));
- const healthRings=[{name:'Protein',value:Math.min(100,Math.round(todayProtein/Math.max(1,targets.dailyProteinGrams)*100)),fill:'#16a36a'},{name:'Calories',value:Math.min(100,Math.round(todayCalories/Math.max(1,targets.dailyCalories)*100)),fill:'#e7a62d'},{name:'Workouts',value:Math.min(100,Math.round(weekWorkouts/Math.max(1,targets.weeklyWorkouts)*100)),fill:'#6b7ce8'}];
- if(section==='Money')return <Card className="overflow-hidden bg-gradient-to-br from-[#f8fffb] to-[#eef7f2]"><CardHeader><CardTitle>Spending picture</CardTitle><CardDescription>See what is available and where this month’s money went.</CardDescription></CardHeader><CardContent className="grid items-center gap-6 md:grid-cols-2"><div className="relative"><ChartContainer className="mx-auto h-56 max-w-72" config={{spent:{label:'Spent',color:'#d99b26'},available:{label:'Available',color:'#dcebe3'}}}><PieChart><Pie data={[{name:'Spent',value:spent},{name:'Available',value:safe}]} dataKey="value" innerRadius={62} outerRadius={88} paddingAngle={3}>{['#d99b26','#cfe5d9'].map(color=><Cell key={color} fill={color}/>)}</Pie></PieChart></ChartContainer><div className="pointer-events-none absolute inset-0 grid place-items-center text-center"><div><p className="text-3xl font-semibold">{Math.round(budgetPct)}%</p><p className="text-xs text-muted-foreground">budget used</p></div></div></div><ChartContainer className="h-56" config={{value:{label:'Spent',color:'#1e6b50'}}}><BarChart data={category} margin={{left:0,right:8,top:8,bottom:16}}><CartesianGrid vertical={false}/><XAxis dataKey="name" tickLine={false} axisLine={false}/><Bar dataKey="value" fill="#1e6b50" radius={[7,7,2,2]}/></BarChart></ChartContainer></CardContent></Card>;
- if(section==='Goals')return <Card className="bg-gradient-to-br from-[#fafcf9] to-[#f1f6ee]"><CardHeader><CardTitle>Goal momentum</CardTitle><CardDescription>Progress across your active outcomes.</CardDescription></CardHeader><CardContent><ChartContainer className="h-56 w-full" config={{progress:{label:'Progress',color:'#23865f'}}}><BarChart data={goalData} layout="vertical" margin={{left:12,right:20}}><CartesianGrid horizontal={false}/><XAxis type="number" domain={[0,100]} hide/><Bar dataKey="progress" fill="#23865f" radius={8}/></BarChart></ChartContainer></CardContent></Card>;
- if(section==='Plan')return <Card className="bg-gradient-to-br from-[#fbfcff] to-[#eef4f7]"><CardHeader><CardTitle>Day load</CardTitle><CardDescription>Minutes committed across today’s scheduled blocks.</CardDescription></CardHeader><CardContent><ChartContainer className="h-52" config={{duration:{label:'Minutes',color:'#3f7e91'}}}><BarChart data={plan.map(x=>({name:x.time,duration:x.duration}))}><CartesianGrid vertical={false}/><XAxis dataKey="name" tickLine={false} axisLine={false}/><Bar dataKey="duration" fill="#3f7e91" radius={[8,8,2,2]}/></BarChart></ChartContainer></CardContent></Card>;
- if(section==='Wellbeing'||section==='Insights')return <Card className="bg-gradient-to-br from-[#fbfffd] via-[#f3faf6] to-[#f7f5ff]"><CardHeader><CardTitle>{section==='Insights'?'Life balance at a glance':'Daily fulfilment'}</CardTitle><CardDescription>Protein, calorie, and workout progress against your personal targets.</CardDescription></CardHeader><CardContent className="grid gap-4 sm:grid-cols-3">{healthRings.map(item=><div key={item.name} className="relative"><ChartContainer className="mx-auto h-40 max-w-44" config={{value:{label:item.name,color:item.fill}}}><RadialBarChart innerRadius="72%" outerRadius="100%" data={[item]} startAngle={90} endAngle={-270}><RadialBar dataKey="value" background cornerRadius={12} fill={item.fill}/></RadialBarChart></ChartContainer><div className="pointer-events-none absolute inset-0 grid place-items-center text-center"><div><p className="text-2xl font-semibold">{item.value}%</p><p className="text-xs text-muted-foreground">{item.name}</p></div></div></div>)}</CardContent></Card>;
- return null;
+function VisualAnalytics({
+  section,
+  data,
+  plan,
+  spent,
+  safe,
+  budgetPct,
+  todayProtein,
+  todayCalories,
+  weekWorkouts,
+  targets,
+}: {
+  section: Section;
+  data: Life;
+  plan: PlanItem[];
+  spent: number;
+  safe: number;
+  budgetPct: number;
+  todayProtein: number;
+  todayCalories: number;
+  weekWorkouts: number;
+  targets: Life['healthTargets'];
+}) {
+  const category = useMemo(() => {
+    const totals = new Map<string, number>();
+    data.expenses.forEach((x) =>
+      totals.set(
+        x.category,
+        (totals.get(x.category) || 0) + x.amountCents / 100,
+      ),
+    );
+    return [...totals]
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 6);
+  }, [data.expenses]);
+  const goalData = data.goals.slice(0, 6).map((x) => ({
+    name: x.title.length > 16 ? `${x.title.slice(0, 16)}…` : x.title,
+    progress: Math.min(
+      100,
+      Math.round((x.currentValue / Math.max(1, x.targetValue)) * 100),
+    ),
+  }));
+  const healthRings = [
+    {
+      name: 'Protein',
+      value: Math.min(
+        100,
+        Math.round(
+          (todayProtein / Math.max(1, targets.dailyProteinGrams)) * 100,
+        ),
+      ),
+      fill: '#16a36a',
+    },
+    {
+      name: 'Calories',
+      value: Math.min(
+        100,
+        Math.round((todayCalories / Math.max(1, targets.dailyCalories)) * 100),
+      ),
+      fill: '#e7a62d',
+    },
+    {
+      name: 'Workouts',
+      value: Math.min(
+        100,
+        Math.round((weekWorkouts / Math.max(1, targets.weeklyWorkouts)) * 100),
+      ),
+      fill: '#6b7ce8',
+    },
+  ];
+  if (section === 'Money')
+    return (
+      <Card className="overflow-hidden bg-gradient-to-br from-[#f8fffb] to-[#eef7f2]">
+        <CardHeader>
+          <CardTitle>Spending picture</CardTitle>
+          <CardDescription>
+            See what is available and where this month’s money went.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid items-center gap-6 md:grid-cols-2">
+          <div className="relative">
+            <ChartContainer
+              className="mx-auto h-56 max-w-72"
+              config={{
+                spent: { label: 'Spent', color: '#d99b26' },
+                available: { label: 'Available', color: '#dcebe3' },
+              }}
+            >
+              <PieChart>
+                <Pie
+                  data={[
+                    { name: 'Spent', value: spent },
+                    { name: 'Available', value: safe },
+                  ]}
+                  dataKey="value"
+                  innerRadius={62}
+                  outerRadius={88}
+                  paddingAngle={3}
+                >
+                  {['#d99b26', '#cfe5d9'].map((color) => (
+                    <Cell key={color} fill={color} />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ChartContainer>
+            <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
+              <div>
+                <p className="text-3xl font-semibold">
+                  {Math.round(budgetPct)}%
+                </p>
+                <p className="text-xs text-muted-foreground">budget used</p>
+              </div>
+            </div>
+          </div>
+          <ChartContainer
+            className="h-56"
+            config={{ value: { label: 'Spent', color: '#1e6b50' } }}
+          >
+            <BarChart
+              data={category}
+              margin={{ left: 0, right: 8, top: 8, bottom: 16 }}
+            >
+              <CartesianGrid vertical={false} />
+              <XAxis dataKey="name" tickLine={false} axisLine={false} />
+              <Bar dataKey="value" fill="#1e6b50" radius={[7, 7, 2, 2]} />
+            </BarChart>
+          </ChartContainer>
+        </CardContent>
+      </Card>
+    );
+  if (section === 'Goals')
+    return (
+      <Card className="overflow-hidden border-0 bg-gradient-to-br from-[#172e27] via-[#23483b] to-[#315d4d] text-white shadow-[0_28px_80px_-45px_rgba(15,50,38,.9)]">
+        <CardHeader>
+          <CardTitle className="text-2xl">Goal constellation</CardTitle>
+          <CardDescription className="text-white/65">
+            Every ring shows exactly how close an outcome is to completion.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {goalData.map((goal, index) => (
+            <div
+              key={goal.name}
+              className="rounded-[24px] border border-white/10 bg-white/8 p-4 backdrop-blur"
+            >
+              <div
+                className="mx-auto grid size-28 place-items-center rounded-full p-2"
+                style={{
+                  background: `conic-gradient(${['#ffb36b', '#79dca8', '#8bb8ff', '#d8a6ff'][index % 4]} ${goal.progress}%,rgba(255,255,255,.12) 0)`,
+                }}
+              >
+                <div className="grid size-full place-items-center rounded-full bg-[#1f4135]">
+                  <span className="text-2xl font-semibold">
+                    {goal.progress}%
+                  </span>
+                </div>
+              </div>
+              <p className="mt-4 truncate text-center font-medium">
+                {goal.name}
+              </p>
+              <p className="mt-1 text-center text-xs text-white/55">
+                {goal.progress >= 100 ? 'Completed' : 'In progress'}
+              </p>
+            </div>
+          ))}
+          {!goalData.length && (
+            <p className="col-span-full py-8 text-center text-sm text-white/65">
+              Create your first measurable goal to begin building momentum.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  if (section === 'Plan')
+    return (
+      <Card className="bg-gradient-to-br from-[#fbfcff] to-[#eef4f7]">
+        <CardHeader>
+          <CardTitle>Day load</CardTitle>
+          <CardDescription>
+            Minutes committed across today’s scheduled blocks.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ChartContainer
+            className="h-52"
+            config={{ duration: { label: 'Minutes', color: '#3f7e91' } }}
+          >
+            <BarChart
+              data={plan.map((x) => ({ name: x.time, duration: x.duration }))}
+            >
+              <CartesianGrid vertical={false} />
+              <XAxis dataKey="name" tickLine={false} axisLine={false} />
+              <Bar dataKey="duration" fill="#3f7e91" radius={[8, 8, 2, 2]} />
+            </BarChart>
+          </ChartContainer>
+        </CardContent>
+      </Card>
+    );
+  if (section === 'Wellbeing' || section === 'Insights')
+    return (
+      <Card className="bg-gradient-to-br from-[#fbfffd] via-[#f3faf6] to-[#f7f5ff]">
+        <CardHeader>
+          <CardTitle>
+            {section === 'Insights'
+              ? 'Life balance at a glance'
+              : 'Daily fulfilment'}
+          </CardTitle>
+          <CardDescription>
+            Protein, calorie, and workout progress against your personal
+            targets.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-3">
+          {healthRings.map((item) => (
+            <div key={item.name} className="relative">
+              <ChartContainer
+                className="mx-auto h-40 max-w-44"
+                config={{ value: { label: item.name, color: item.fill } }}
+              >
+                <RadialBarChart
+                  innerRadius="72%"
+                  outerRadius="100%"
+                  data={[item]}
+                  startAngle={90}
+                  endAngle={-270}
+                >
+                  <RadialBar
+                    dataKey="value"
+                    background
+                    cornerRadius={12}
+                    fill={item.fill}
+                  />
+                </RadialBarChart>
+              </ChartContainer>
+              <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
+                <div>
+                  <p className="text-2xl font-semibold">{item.value}%</p>
+                  <p className="text-xs text-muted-foreground">{item.name}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    );
+  return null;
 }
-function Metric({label,value,note}:{label:string;value:string;note:string}){return <Card><CardHeader><CardDescription>{label}</CardDescription><CardTitle className="text-2xl">{value}</CardTitle></CardHeader><CardContent><p className="text-xs text-muted-foreground">{note}</p></CardContent></Card>}
-function Select({value,onChange,options}:{value:string;onChange:(value:string)=>void;options:string[]}){return <select className="h-9 rounded-lg border bg-background px-3 text-sm" value={value} onChange={e=>onChange(e.target.value)}>{options.map(x=><option key={x} value={x}>{x[0].toUpperCase()+x.slice(1)}</option>)}</select>}
-function Empty({text}:{text:string}){return <p className="py-6 text-sm text-muted-foreground">{text}</p>}
+function Metric({
+  label,
+  value,
+  note,
+}: {
+  label: string;
+  value: string;
+  note: string;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardDescription>{label}</CardDescription>
+        <CardTitle className="text-2xl">{value}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-xs text-muted-foreground">{note}</p>
+      </CardContent>
+    </Card>
+  );
+}
+function HealthRecord({
+  item,
+  onEdit,
+  onDelete,
+}: {
+  item: HealthLog;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <article className="rounded-2xl border border-border/60 bg-background/85 p-4 transition-all hover:-translate-y-0.5 hover:shadow-md">
+      <div className="flex items-start gap-3">
+        <div
+          className={`grid size-10 shrink-0 place-items-center rounded-2xl text-lg ${item.kind === 'workout' ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'}`}
+        >
+          {item.kind === 'workout' ? '↗' : '✦'}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold">{item.title}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {item.logDate}
+            {item.durationMinutes ? ` · ${item.durationMinutes} min` : ''}
+            {item.calories ? ` · ${item.calories} kcal` : ''}
+            {item.proteinGrams ? ` · ${item.proteinGrams}g protein` : ''}
+          </p>
+          {item.detail && (
+            <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+              {item.detail}
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="mt-3 flex gap-2">
+        <Button size="sm" variant="outline" onClick={onEdit}>
+          <Pencil />
+          Edit
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-destructive"
+          onClick={onDelete}
+        >
+          <Trash2 />
+          Delete
+        </Button>
+      </div>
+    </article>
+  );
+}
+function range(start: number, end: number, step: number) {
+  return Array.from(
+    { length: Math.floor((end - start) / step) + 1 },
+    (_, i) => start + i * step,
+  );
+}
+function targetOptions(key: keyof Life['healthTargets']) {
+  if (key === 'dailyProteinGrams') return range(40, 300, 5);
+  if (key === 'dailyCalories') return range(1000, 5000, 50);
+  if (key === 'dailyWaterMl') return range(500, 6000, 250);
+  if (key === 'dailySteps') return range(1000, 30000, 500);
+  return range(1, 14, 1);
+}
+function NumberPicker({
+  value,
+  onChange,
+  options,
+  suffix,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  options: number[];
+  suffix: string;
+}) {
+  return (
+    <div className="relative mt-1 overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-b from-muted/60 via-background to-muted/60 shadow-inner">
+      <select
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="h-14 w-full appearance-none bg-transparent px-3 text-center text-base font-semibold outline-none"
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option.toLocaleString()} {suffix}
+          </option>
+        ))}
+      </select>
+      <div className="pointer-events-none absolute inset-x-2 top-1/2 h-9 -translate-y-1/2 rounded-xl border border-primary/10" />
+    </div>
+  );
+}
+function Select({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+}) {
+  return (
+    <select
+      className="h-9 rounded-lg border bg-background px-3 text-sm"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      {options.map((x) => (
+        <option key={x} value={x}>
+          {x[0].toUpperCase() + x.slice(1)}
+        </option>
+      ))}
+    </select>
+  );
+}
+function Empty({ text }: { text: string }) {
+  return <p className="py-6 text-sm text-muted-foreground">{text}</p>;
+}
