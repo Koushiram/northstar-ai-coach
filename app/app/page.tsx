@@ -1,7 +1,7 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
-import { ArrowRight, CalendarDays, Check, ChevronRight, CircleDollarSign, Clock3, Flame, HeartPulse, LogIn, Menu, MessageCircle, Mic, Moon, Plus, Send, Sparkles, SunMedium, Target, X } from 'lucide-react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
+import { ArrowRight, CalendarDays, Check, ChevronRight, CircleDollarSign, Clock3, Flame, HeartPulse, LogIn, Menu, MessageCircle, Mic, Moon, Pause, Play, Plus, Send, Sparkles, SunMedium, Target, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,7 +16,7 @@ type Checkin = { checkinDate: string; sleepMinutes: number; energy: number; mood
 type PlanItem = { id: string; time: string; title: string; type: string; duration: number };
 type CoachMessage = { role: 'coach' | 'user'; text: string };
 type Section = 'Today' | 'Plan' | 'Goals' | 'Money' | 'Wellbeing' | 'Insights';
-const cleanCoachText = (text:string) => text.replace(/\*+/g,'').replace(/^Recommendation:\s*/i,'').trim();
+const cleanCoachText = (text:string) => {const clean=text.replace(/\*+/g,'').replace(/^Recommendation:\s*/i,'').trim();if(clean.length<130||clean.includes('\n•'))return clean;const points=clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map(x=>x.trim()).filter(Boolean)??[clean];return points.length>1?points.map(x=>`• ${x}`).join('\n'):clean};
 type MoneyAccount = { balanceCents: number; currency: string; monthlyBudgetCents: number };
 type Expense = { id: string; amountCents: number; category: string; note: string; spentOn: string };
 type Goal = { id: string; title: string; area: string; targetValue: number; currentValue: number; unit: string; targetDate?: string; status: string };
@@ -53,12 +53,16 @@ export default function Home() {
   const [reviewDraft, setReviewDraft] = useState({ win: '', reflection: '', energy: 3 });
   const [reviewSaved, setReviewSaved] = useState(false);
   const [focusActive, setFocusActive] = useState(false);
+  const [focusRunning, setFocusRunning] = useState(false);
+  const [focusRemaining, setFocusRemaining] = useState(75*60);
   const [listening, setListening] = useState(false);
   const [coachOpen, setCoachOpen] = useState(false);
   const [coachInput, setCoachInput] = useState('');
   const [coachBusy, setCoachBusy] = useState(false);
   const [coachMessages, setCoachMessages] = useState<CoachMessage[]>([{ role: 'coach', text: 'I’m ready. Ask what to do next, request a replan, or check whether today should be a recovery day.' }]);
   const [planAdjusted, setPlanAdjusted] = useState(false);
+  const voiceReplyRef = useRef(false);
+  const [voiceError,setVoiceError]=useState('');
   const [account, setAccount] = useState<MoneyAccount>({balanceCents:0,currency:'AUD',monthlyBudgetCents:0});
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -101,6 +105,7 @@ export default function Home() {
     };
     void load();
   }, []);
+  useEffect(()=>{if(!focusActive||!focusRunning||focusRemaining<=0)return;const timer=window.setInterval(()=>setFocusRemaining(value=>Math.max(0,value-1)),1000);return()=>window.clearInterval(timer)},[focusActive,focusRunning,focusRemaining]);
 
   const togglePriority = async (id: string) => {
     const current = priorities.find((priority) => priority.id === id);
@@ -180,9 +185,13 @@ export default function Home() {
     if (data.action?.type === 'review_saved') setReviewSaved(true);
     if (data.action?.type === 'plan_saved' && data.action.plan) setPlanItems(data.action.plan.items);
     if (data.action && ['money_updated','expense_created','goal_created','health_logged'].includes(data.action.type)) await refreshLife();
-    setCoachMessages((items) => [...items, { role: 'coach', text: cleanCoachText(data.reply ?? data.error ?? 'I could not complete that request just now.') }]);
+    const reply=cleanCoachText(data.reply ?? data.error ?? 'I could not complete that request just now.');
+    setCoachMessages((items) => [...items, { role: 'coach', text: reply }]);
+    if(voiceReplyRef.current&&'speechSynthesis'in window){window.speechSynthesis.cancel();window.speechSynthesis.speak(new SpeechSynthesisUtterance(reply.replace(/^•\s*/gm,'')));voiceReplyRef.current=false;}
     setCoachBusy(false);
   };
+
+  const startVoice=()=>{setVoiceError('');const SpeechRecognition=(window as typeof window&{SpeechRecognition?:new()=>any;webkitSpeechRecognition?:new()=>any}).SpeechRecognition||(window as typeof window&{webkitSpeechRecognition?:new()=>any}).webkitSpeechRecognition;if(!SpeechRecognition){setVoiceError('Voice input is not supported in this browser. You can still type your request.');setCoachOpen(true);return;}const recognition=new SpeechRecognition();recognition.lang='en-AU';recognition.interimResults=false;recognition.continuous=false;recognition.onstart=()=>setListening(true);recognition.onend=()=>setListening(false);recognition.onerror=()=>{setListening(false);setVoiceError('I could not hear that clearly. Please try again.');setCoachOpen(true)};recognition.onresult=(event:any)=>{const transcript=event.results?.[0]?.[0]?.transcript?.trim();if(transcript){voiceReplyRef.current=true;setCoachOpen(true);void askCoach(undefined,transcript)}};recognition.start();};
 
   const monthSpent=expenses.reduce((sum,item)=>sum+item.amountCents,0);
   const budgetUsed=account.monthlyBudgetCents?Math.min(100,Math.round(monthSpent/account.monthlyBudgetCents*100)):0;
@@ -237,16 +246,16 @@ export default function Home() {
                   <CardDescription className="mt-2 max-w-xl text-primary-foreground/70">{recoveryDay ? 'Your check-in shows limited recovery. Keep the product brief, add more buffer, and make the workout optional.' : 'Your energy is strongest now, and the rest of your morning has enough buffer before the team check-in.'}</CardDescription>
                 </CardHeader>
                 <CardContent className="mt-6 flex flex-wrap gap-3">
-                  <Button onClick={() => setFocusActive((active) => !active)} className="h-10 bg-white px-4 text-primary hover:bg-white/90">
-                    {focusActive ? 'Focus session active' : 'Start focus session'} {focusActive ? <Check /> : <ArrowRight />}
+                  <Button onClick={() => {setFocusRemaining((planItems[0]?.duration??75)*60);setFocusActive(true);setFocusRunning(true)}} className="h-10 bg-white px-4 text-primary hover:bg-white/90">
+                    Start focus session <ArrowRight />
                   </Button>
-                  <Button onClick={() => setPlanAdjusted(true)} className="h-10 border-white/20 bg-white/10 px-4 text-white hover:bg-white/15">Adjust my plan</Button>
+                  <Button onClick={async()=>{await generatePlan();setPlanAdjusted(true)}} disabled={generatingPlan} className="h-10 border-white/20 bg-white/10 px-4 text-white hover:bg-white/15">{generatingPlan?'Adjusting…':'Adjust my plan'}</Button>
                 </CardContent>
               </Card>
 
               {planAdjusted && (
                 <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" role="status">
-                  <span>I’ve protected a 30-minute buffer after lunch and moved the finance review to 4:00 PM.</span>
+                  <span>Your plan has been regenerated from current priorities and readiness. Open Plan to review or edit every block.</span>
                   <Button variant="ghost" size="sm" onClick={() => setPlanAdjusted(false)}>Undo</Button>
                 </div>
               )}
@@ -328,7 +337,7 @@ export default function Home() {
           )}
 
           <div className="sticky bottom-4 mx-auto mt-7 flex max-w-2xl items-center gap-3 rounded-2xl border border-border bg-card/95 p-2.5 shadow-[0_18px_50px_-25px_rgba(23,50,42,.5)] backdrop-blur">
-            <Button onClick={() => setListening((active) => !active)} size="icon-lg" className={`rounded-xl ${listening ? 'animate-pulse bg-red-500 hover:bg-red-500/90' : ''}`} aria-label={listening ? 'Stop voice conversation' : 'Start voice conversation'}><Mic /></Button>
+            <Button onClick={startVoice} size="icon-lg" className={`rounded-xl ${listening ? 'animate-pulse bg-red-500 hover:bg-red-500/90' : ''}`} aria-label="Start voice conversation"><Mic /></Button>
             <button onClick={() => setCoachOpen(true)} className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-medium">Ask Northstar anything…</span><span className="block truncate text-xs text-muted-foreground">Try “What should I do next?” or “Replan my afternoon”</span></button>
             <div className={`hidden items-center gap-1 text-xs sm:flex ${listening ? 'font-medium text-red-600' : 'text-muted-foreground'}`}><Clock3 className="size-3.5" /> {listening ? 'Listening…' : 'Ready'}</div>
           </div>
@@ -347,13 +356,15 @@ export default function Home() {
             </div>
           )}
 
+          {focusActive&&<div className="fixed inset-0 z-50 grid place-items-center bg-[#0d2f25]/70 p-4 backdrop-blur-md"><Card className="w-full max-w-lg overflow-hidden border-emerald-200 shadow-2xl"><CardHeader className="text-center"><CardAction><Button variant="ghost" size="icon" onClick={()=>{setFocusActive(false);setFocusRunning(false)}} aria-label="Close focus session"><X/></Button></CardAction><div className="mx-auto mb-3 grid size-12 place-items-center rounded-2xl bg-primary text-primary-foreground"><Sparkles/></div><CardTitle className="text-2xl">Focus session</CardTitle><CardDescription>{priorities.find(x=>!x.completed)?.title||'Your most important priority'}</CardDescription></CardHeader><CardContent className="text-center"><div className="mx-auto grid size-56 place-items-center rounded-full border-[12px] border-emerald-100 bg-gradient-to-br from-white to-emerald-50 shadow-inner"><div><p className="text-5xl font-semibold tabular-nums">{String(Math.floor(focusRemaining/60)).padStart(2,'0')}:{String(focusRemaining%60).padStart(2,'0')}</p><p className="mt-2 text-sm text-muted-foreground">{focusRemaining===0?'Session complete':'Stay with one thing'}</p></div></div><div className="mt-6 flex justify-center gap-3"><Button size="lg" onClick={()=>setFocusRunning(value=>!value)} disabled={focusRemaining===0}>{focusRunning?<><Pause/>Pause</>:<><Play/>Resume</>}</Button><Button size="lg" variant="outline" onClick={()=>{setFocusActive(false);setFocusRunning(false)}}>End session</Button></div><p className="mt-4 text-xs text-muted-foreground">You can close this session at any time. Your tasks remain unchanged.</p></CardContent></Card></div>}
+
           {coachOpen && (
             <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/20 p-3 backdrop-blur-sm sm:items-center">
               <Card className="flex max-h-[82vh] w-full max-w-xl flex-col overflow-hidden shadow-2xl">
                 <CardHeader className="border-b"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground"><Sparkles className="size-4" /></span><div><CardTitle>Northstar coach</CardTitle><CardDescription>Personal guidance from today’s real context</CardDescription></div></div><CardAction><Button onClick={() => setCoachOpen(false)} variant="ghost" size="icon" aria-label="Close coach"><X /></Button></CardAction></CardHeader>
                 <CardContent className="flex min-h-0 flex-1 flex-col p-0">
                   {!viewer ? <div className="m-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950"><p className="font-medium">Sign in for private, personalized coaching</p><p className="mt-2 text-sm text-emerald-800">Northstar uses only your saved priorities and wellbeing check-in to guide the day.</p><a href="/signin-with-chatgpt?return_to=%2F" target="_top" className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"><LogIn className="size-4" />Continue with ChatGPT</a></div> : <>
-                    <div className="flex-1 space-y-3 overflow-y-auto p-5">{coachMessages.map((message, index) => <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`}>{message.text}</div></div>)}{coachBusy && <div className="w-fit rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">Thinking through your day…</div>}</div>
+                    <div className="flex-1 space-y-3 overflow-y-auto p-5">{voiceError&&<div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{voiceError}</div>}{coachMessages.map((message, index) => <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[85%] whitespace-pre-line rounded-2xl px-4 py-3 text-sm leading-relaxed ${message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`}>{message.text}</div></div>)}{coachBusy && <div className="w-fit rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">Thinking through your day…</div>}</div>
                     <div className="flex flex-wrap gap-2 border-t px-4 py-3">{['What should I do next?', 'Replan my afternoon', 'Should I reduce my workout?'].map((prompt) => <button key={prompt} onClick={() => void askCoach(undefined, prompt)} className="rounded-full border bg-background px-3 py-1.5 text-xs hover:bg-muted">{prompt}</button>)}</div>
                     <form onSubmit={askCoach} className="flex gap-2 border-t p-4"><Input value={coachInput} onChange={(event) => setCoachInput(event.target.value)} placeholder="Ask about your day…" maxLength={500} aria-label="Message Northstar coach" /><Button type="submit" size="icon" disabled={!coachInput.trim() || coachBusy} aria-label="Send message"><Send /></Button></form>
                   </>}
