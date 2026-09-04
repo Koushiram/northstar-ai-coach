@@ -22,6 +22,13 @@
       "when": 1788343099416,
       "tag": "0002_omniscient_ultragirl",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788503524112,
+      "tag": "0003_jittery_namor",
+      "breakpoints": true
     }
   ]
 }

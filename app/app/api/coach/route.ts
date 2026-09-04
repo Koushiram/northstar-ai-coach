@@ -107,6 +107,8 @@ function coachReply(message: string, tasks: Task[], checkin: Checkin | null) {
   const lower = message.toLowerCase();
   const lowRecovery = score < 55;
 
+  if (/^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening))[!.\s]*$/i.test(message)) return 'Hello. I’m ready to help you plan, manage money, track goals, or review your wellbeing. What would you like to work on?';
+
   if (/money|budget|spend|transaction|bank|balance|expense/i.test(lower)) return 'I can update your balance, record expenses, and summarize this month. Try “set my balance to 50,000” or “log $18 for lunch”.';
   if (/calendar|meeting|appointment/i.test(lower)) return 'Calendar actions are not connected yet. Connect Google Calendar before I create or move real events.';
 
@@ -141,7 +143,7 @@ async function generateModelReply(message: string, tasks: Task[], checkin: Check
     priorities: openTasks.map(({ title, meta }) => ({ title, meta })),
     completedToday: tasks.length - openTasks.length,
   };
-  const instructions = 'You are Northstar, a calm personal coach. Use only the supplied daily context. Give one clear recommendation, a short reason, and one concrete next action. Never invent calendar, financial, health, or task data. Do not diagnose or provide medical treatment. Be concise and supportive.';
+  const instructions = 'You are Northstar, a polished and capable personal coach. Use only the supplied limited daily context. Respond in professional natural language with concise paragraphs. Do not use markdown asterisks, decorative labels such as Recommendation:, or robotic templates. Acknowledge greetings naturally. Never invent calendar, financial, health, nutrition, goal, or task data. Do not diagnose or provide medical treatment.';
 
   if (env.NVIDIA_API_KEY) {
     try {
@@ -217,6 +219,14 @@ export async function POST(request: Request) {
   const db = getD1();
   await ensureSchema(db);
   const savedTasks = (await db.prepare('SELECT id, title, meta, completed, position FROM tasks WHERE user_id = ? ORDER BY position, created_at').bind(user.userId).all<Task>()).results ?? [];
+  const budgetMatch=message.match(/(?:set|update|change)\s+(?:my\s+)?monthly\s+budget\s+(?:to|as)\s*\$?([\d,]+(?:\.\d{1,2})?)/i);
+  if(budgetMatch){const amount=moneyNumber(budgetMatch[1]);const now=Date.now();const current=await db.prepare('SELECT balance_cents AS balanceCents FROM money_accounts WHERE user_id=?').bind(user.userId).first<{balanceCents:number}>();await db.prepare(`INSERT INTO money_accounts(id,user_id,name,balance_cents,currency,monthly_budget_cents,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET monthly_budget_cents=excluded.monthly_budget_cents,updated_at=excluded.updated_at`).bind(crypto.randomUUID(),user.userId,'Main balance',current?.balanceCents??0,'AUD',Math.round(amount*100),now,now).run();return NextResponse.json({reply:`Your monthly budget is now $${amount.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}.`,mode:'action',action:{type:'money_updated'}});}
+  const proteinMatch=message.match(/(?:set|update|change)\s+(?:my\s+)?(?:daily\s+)?protein\s+(?:goal|target)\s+(?:to|as)\s*(\d+)\s*g?/i);
+  if(proteinMatch){const grams=Number(proteinMatch[1]),now=Date.now();await db.prepare(`INSERT INTO health_targets(id,user_id,daily_calories,daily_protein_grams,daily_water_ml,daily_steps,weekly_workouts,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET daily_protein_grams=excluded.daily_protein_grams,updated_at=excluded.updated_at`).bind(crypto.randomUUID(),user.userId,2200,grams,2500,8000,4,now,now).run();return NextResponse.json({reply:`Your daily protein target is now ${grams} grams.`,mode:'action',action:{type:'health_logged'}});}
+  const deleteExpenseMatch=message.match(/(?:delete|remove)\s+(?:the\s+)?(?:expense|transaction)\s+(?:for\s+)?(.+)/i);
+  if(deleteExpenseMatch){const target=deleteExpenseMatch[1].trim().replace(/[.!]+$/,'');const row=await db.prepare('SELECT id,note FROM expenses WHERE user_id=? AND lower(note) LIKE ? ORDER BY created_at DESC LIMIT 1').bind(user.userId,`%${target.toLowerCase()}%`).first<{id:string;note:string}>();if(!row)return NextResponse.json({reply:`I couldn’t find an expense matching “${target}”.`,mode:'action'});await db.prepare('DELETE FROM expenses WHERE id=? AND user_id=?').bind(row.id,user.userId).run();return NextResponse.json({reply:`Deleted the expense “${row.note}”.`,mode:'action',action:{type:'expense_created'}});}
+  const goalProgressMatch=message.match(/(?:update|set)\s+(?:my\s+)?goal\s+(.+?)\s+(?:progress\s+)?to\s+(\d+)/i);
+  if(goalProgressMatch){const target=goalProgressMatch[1].trim(),progress=Number(goalProgressMatch[2]);const row=await db.prepare('SELECT id,title,target_value AS targetValue FROM goals WHERE user_id=? AND lower(title) LIKE ? LIMIT 1').bind(user.userId,`%${target.toLowerCase()}%`).first<{id:string;title:string;targetValue:number}>();if(!row)return NextResponse.json({reply:`I couldn’t find a goal matching “${target}”.`,mode:'action'});await db.prepare('UPDATE goals SET current_value=?,status=?,updated_at=? WHERE id=? AND user_id=?').bind(progress,progress>=row.targetValue?'complete':'active',Date.now(),row.id,user.userId).run();return NextResponse.json({reply:`Updated “${row.title}” to ${progress}.`,mode:'action',action:{type:'goal_created'}});}
   const requestedBalance = balanceFromMessage(message);
   if (requestedBalance !== null) {
     if (!Number.isFinite(requestedBalance) || requestedBalance < 0 || requestedBalance > 1_000_000_000) return NextResponse.json({error:'Enter a balance between 0 and 1 billion.'},{status:400});

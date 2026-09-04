@@ -2,52 +2,37 @@ import { NextResponse } from 'next/server';
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { ensureSchema, getD1 } from '@/db';
 
-const dateValue = (value?: string) => value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : new Date().toISOString().slice(0, 10);
-const textValue = (value: unknown, fallback = '') => typeof value === 'string' ? value : fallback;
+const today=()=>new Date().toISOString().slice(0,10);
+const dateValue=(value:unknown)=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)?value:today();
+const textValue=(value:unknown,fallback='')=>typeof value==='string'?value.trim():fallback;
+const numberValue=(value:unknown,fallback=0)=>Number.isFinite(Number(value))?Number(value):fallback;
 
-export async function GET(request: Request) {
-  const user = await getChatGPTUser();
-  if (!user) return NextResponse.json({ error: 'Sign in required' }, { status: 401 });
-  const db = getD1(); await ensureSchema(db);
-  const month = new URL(request.url).searchParams.get('month') || dateValue().slice(0, 7);
-  const [account, expenseResult, goalResult, healthResult] = await Promise.all([
-    db.prepare('SELECT balance_cents AS balanceCents, currency, monthly_budget_cents AS monthlyBudgetCents FROM money_accounts WHERE user_id = ?').bind(user.userId).first(),
-    db.prepare("SELECT id,amount_cents AS amountCents,category,note,spent_on AS spentOn FROM expenses WHERE user_id = ? AND spent_on LIKE ? ORDER BY spent_on DESC,created_at DESC LIMIT 100").bind(user.userId, `${month}%`).all(),
-    db.prepare("SELECT id,title,area,target_value AS targetValue,current_value AS currentValue,unit,target_date AS targetDate,status FROM goals WHERE user_id = ? ORDER BY status,created_at DESC").bind(user.userId).all(),
-    db.prepare('SELECT id,log_date AS logDate,kind,title,detail,duration_minutes AS durationMinutes,calories,protein_grams AS proteinGrams FROM health_logs WHERE user_id = ? ORDER BY log_date DESC,created_at DESC LIMIT 100').bind(user.userId).all(),
+async function snapshot(db:D1Database,userId:string,month=today().slice(0,7)){
+  const [account,expenseResult,goalResult,healthResult,targets]=await Promise.all([
+    db.prepare('SELECT balance_cents AS balanceCents,currency,monthly_budget_cents AS monthlyBudgetCents FROM money_accounts WHERE user_id=?').bind(userId).first(),
+    db.prepare('SELECT id,amount_cents AS amountCents,category,note,spent_on AS spentOn FROM expenses WHERE user_id=? AND spent_on LIKE ? ORDER BY spent_on DESC,created_at DESC LIMIT 200').bind(userId,`${month}%`).all(),
+    db.prepare('SELECT id,title,area,target_value AS targetValue,current_value AS currentValue,unit,target_date AS targetDate,status FROM goals WHERE user_id=? ORDER BY status,created_at DESC').bind(userId).all(),
+    db.prepare('SELECT id,log_date AS logDate,kind,title,detail,duration_minutes AS durationMinutes,calories,protein_grams AS proteinGrams FROM health_logs WHERE user_id=? ORDER BY log_date DESC,created_at DESC LIMIT 200').bind(userId).all(),
+    db.prepare('SELECT daily_calories AS dailyCalories,daily_protein_grams AS dailyProteinGrams,daily_water_ml AS dailyWaterMl,daily_steps AS dailySteps,weekly_workouts AS weeklyWorkouts FROM health_targets WHERE user_id=?').bind(userId).first(),
   ]);
-  return NextResponse.json({ account: account ?? { balanceCents: 0, currency: 'AUD', monthlyBudgetCents: 0 }, expenses: expenseResult.results ?? [], goals: goalResult.results ?? [], healthLogs: healthResult.results ?? [] });
+  return {account:account??{balanceCents:0,currency:'AUD',monthlyBudgetCents:0},expenses:expenseResult.results??[],goals:goalResult.results??[],healthLogs:healthResult.results??[],healthTargets:targets??{dailyCalories:2200,dailyProteinGrams:120,dailyWaterMl:2500,dailySteps:8000,weeklyWorkouts:4}};
 }
 
-export async function POST(request: Request) {
-  const user = await getChatGPTUser();
-  if (!user) return NextResponse.json({ error: 'Sign in required' }, { status: 401 });
-  const body = await request.json() as Record<string, unknown>; const db = getD1(); await ensureSchema(db); const now = Date.now();
-  if (body.type === 'balance') {
-    const balanceCents = Math.round(Number(body.balance) * 100); const monthlyBudgetCents = Math.round(Number(body.monthlyBudget || 0) * 100);
-    if (!Number.isFinite(balanceCents) || balanceCents < 0) return NextResponse.json({ error: 'Enter a valid balance.' }, { status: 400 });
-    await db.prepare(`INSERT INTO money_accounts(id,user_id,name,balance_cents,currency,monthly_budget_cents,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET balance_cents=excluded.balance_cents,monthly_budget_cents=CASE WHEN excluded.monthly_budget_cents>0 THEN excluded.monthly_budget_cents ELSE money_accounts.monthly_budget_cents END,updated_at=excluded.updated_at`).bind(crypto.randomUUID(),user.userId,'Main balance',balanceCents,'AUD',monthlyBudgetCents,now,now).run();
-  } else if (body.type === 'expense') {
-    const amountCents=Math.round(Number(body.amount)*100); if(!Number.isFinite(amountCents)||amountCents<=0) return NextResponse.json({error:'Enter a valid expense.'},{status:400});
-    await db.prepare('INSERT INTO expenses(id,user_id,amount_cents,category,note,spent_on,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),user.userId,amountCents,textValue(body.category,'Other').slice(0,40),textValue(body.note,'Expense').slice(0,120),dateValue(textValue(body.date)),now,now).run();
-  } else if (body.type === 'goal') {
-    const title=textValue(body.title).trim(); if(!title) return NextResponse.json({error:'Goal title is required.'},{status:400});
-    await db.prepare('INSERT INTO goals(id,user_id,title,area,target_value,current_value,unit,target_date,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),user.userId,title.slice(0,140),textValue(body.area,'Personal'),Math.max(1,Number(body.targetValue)||100),Math.max(0,Number(body.currentValue)||0),textValue(body.unit,'%').slice(0,20),textValue(body.targetDate)||null,'active',now,now).run();
-  } else if (body.type === 'health') {
-    const title=textValue(body.title).trim(); if(!title) return NextResponse.json({error:'A workout or meal name is required.'},{status:400});
-    await db.prepare('INSERT INTO health_logs(id,user_id,log_date,kind,title,detail,duration_minutes,calories,protein_grams,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),user.userId,dateValue(textValue(body.date)),body.kind==='meal'?'meal':'workout',title.slice(0,140),textValue(body.detail).slice(0,300),Number(body.durationMinutes)||null,Number(body.calories)||null,Number(body.proteinGrams)||null,now,now).run();
-  } else return NextResponse.json({error:'Unsupported record type.'},{status:400});
-  return GET(request);
-}
+async function context(){const user=await getChatGPTUser();if(!user)return null;const db=getD1();await ensureSchema(db);return{user,db};}
+export async function GET(request:Request){const ctx=await context();if(!ctx)return NextResponse.json({error:'Sign in required'},{status:401});return NextResponse.json(await snapshot(ctx.db,ctx.user.userId,new URL(request.url).searchParams.get('month')||today().slice(0,7)));}
 
-export async function PATCH(request: Request) {
-  const user=await getChatGPTUser(); if(!user)return NextResponse.json({error:'Sign in required'},{status:401});
-  const body=await request.json() as {type?:string;id?:string;currentValue?:number;status?:string}; const db=getD1(); await ensureSchema(db);
-  if(!body.id)return NextResponse.json({error:'Record id required.'},{status:400});
-  if(body.type==='goal'){await db.prepare('UPDATE goals SET current_value=?,status=?,updated_at=? WHERE id=? AND user_id=?').bind(Math.max(0,Number(body.currentValue)||0),body.status==='complete'?'complete':'active',Date.now(),body.id,user.userId).run();}
-  else if(body.type==='expense')await db.prepare('DELETE FROM expenses WHERE id=? AND user_id=?').bind(body.id,user.userId).run();
-  else if(body.type==='health')await db.prepare('DELETE FROM health_logs WHERE id=? AND user_id=?').bind(body.id,user.userId).run();
-  else if(body.type==='goal_delete')await db.prepare('DELETE FROM goals WHERE id=? AND user_id=?').bind(body.id,user.userId).run();
-  else return NextResponse.json({error:'Unsupported update.'},{status:400});
-  return GET(request);
-}
+export async function POST(request:Request){const ctx=await context();if(!ctx)return NextResponse.json({error:'Sign in required'},{status:401});const body=await request.json() as Record<string,unknown>;const{db,user}=ctx;const now=Date.now();
+  if(body.type==='money'){const balance=Math.round(numberValue(body.balance)*100),budget=Math.round(numberValue(body.monthlyBudget)*100);if(balance<0||budget<0)return NextResponse.json({error:'Balance and budget cannot be negative.'},{status:400});await db.prepare(`INSERT INTO money_accounts(id,user_id,name,balance_cents,currency,monthly_budget_cents,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET balance_cents=excluded.balance_cents,monthly_budget_cents=excluded.monthly_budget_cents,updated_at=excluded.updated_at`).bind(crypto.randomUUID(),user.userId,'Main balance',balance,'AUD',budget,now,now).run();}
+  else if(body.type==='expense'){const amount=Math.round(numberValue(body.amount)*100),note=textValue(body.note);if(amount<=0||!note)return NextResponse.json({error:'Enter an amount and description.'},{status:400});await db.prepare('INSERT INTO expenses(id,user_id,amount_cents,category,note,spent_on,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),user.userId,amount,textValue(body.category,'Other').slice(0,40),note.slice(0,120),dateValue(body.date),now,now).run();}
+  else if(body.type==='goal'){const title=textValue(body.title);if(!title)return NextResponse.json({error:'Goal title is required.'},{status:400});await db.prepare('INSERT INTO goals(id,user_id,title,area,target_value,current_value,unit,target_date,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),user.userId,title.slice(0,140),textValue(body.area,'Personal'),Math.max(1,numberValue(body.targetValue,100)),Math.max(0,numberValue(body.currentValue)),textValue(body.unit,'%').slice(0,20),textValue(body.targetDate)||null,'active',now,now).run();}
+  else if(body.type==='health'){const title=textValue(body.title);if(!title)return NextResponse.json({error:'Workout or meal name is required.'},{status:400});await db.prepare('INSERT INTO health_logs(id,user_id,log_date,kind,title,detail,duration_minutes,calories,protein_grams,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),user.userId,dateValue(body.date),body.kind==='meal'?'meal':'workout',title.slice(0,140),textValue(body.detail).slice(0,300),numberValue(body.durationMinutes)||null,numberValue(body.calories)||null,numberValue(body.proteinGrams)||null,now,now).run();}
+  else if(body.type==='health_targets'){await db.prepare(`INSERT INTO health_targets(id,user_id,daily_calories,daily_protein_grams,daily_water_ml,daily_steps,weekly_workouts,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET daily_calories=excluded.daily_calories,daily_protein_grams=excluded.daily_protein_grams,daily_water_ml=excluded.daily_water_ml,daily_steps=excluded.daily_steps,weekly_workouts=excluded.weekly_workouts,updated_at=excluded.updated_at`).bind(crypto.randomUUID(),user.userId,Math.max(0,numberValue(body.dailyCalories,2200)),Math.max(0,numberValue(body.dailyProteinGrams,120)),Math.max(0,numberValue(body.dailyWaterMl,2500)),Math.max(0,numberValue(body.dailySteps,8000)),Math.max(0,numberValue(body.weeklyWorkouts,4)),now,now).run();}
+  else return NextResponse.json({error:'Unsupported record type.'},{status:400});return NextResponse.json(await snapshot(db,user.userId));}
+
+export async function PATCH(request:Request){const ctx=await context();if(!ctx)return NextResponse.json({error:'Sign in required'},{status:401});const body=await request.json() as Record<string,unknown>;const{db,user}=ctx,id=textValue(body.id);if(!id)return NextResponse.json({error:'Record id required.'},{status:400});const now=Date.now();
+  if(body.type==='expense')await db.prepare('UPDATE expenses SET amount_cents=?,category=?,note=?,spent_on=?,updated_at=? WHERE id=? AND user_id=?').bind(Math.round(numberValue(body.amount)*100),textValue(body.category,'Other'),textValue(body.note,'Expense'),dateValue(body.date),now,id,user.userId).run();
+  else if(body.type==='goal')await db.prepare('UPDATE goals SET title=?,area=?,target_value=?,current_value=?,unit=?,target_date=?,status=?,updated_at=? WHERE id=? AND user_id=?').bind(textValue(body.title),textValue(body.area,'Personal'),Math.max(1,numberValue(body.targetValue,100)),Math.max(0,numberValue(body.currentValue)),textValue(body.unit,'%'),textValue(body.targetDate)||null,body.status==='complete'?'complete':'active',now,id,user.userId).run();
+  else if(body.type==='health')await db.prepare('UPDATE health_logs SET log_date=?,kind=?,title=?,detail=?,duration_minutes=?,calories=?,protein_grams=?,updated_at=? WHERE id=? AND user_id=?').bind(dateValue(body.date),body.kind==='meal'?'meal':'workout',textValue(body.title),textValue(body.detail),numberValue(body.durationMinutes)||null,numberValue(body.calories)||null,numberValue(body.proteinGrams)||null,now,id,user.userId).run();
+  else return NextResponse.json({error:'Unsupported update.'},{status:400});return NextResponse.json(await snapshot(db,user.userId));}
+
+export async function DELETE(request:Request){const ctx=await context();if(!ctx)return NextResponse.json({error:'Sign in required'},{status:401});const url=new URL(request.url),type=url.searchParams.get('type'),id=url.searchParams.get('id');if(!id)return NextResponse.json({error:'Record id required.'},{status:400});const table=type==='expense'?'expenses':type==='goal'?'goals':type==='health'?'health_logs':null;if(!table)return NextResponse.json({error:'Unsupported record type.'},{status:400});await ctx.db.prepare(`DELETE FROM ${table} WHERE id=? AND user_id=?`).bind(id,ctx.user.userId).run();return NextResponse.json(await snapshot(ctx.db,ctx.user.userId));}

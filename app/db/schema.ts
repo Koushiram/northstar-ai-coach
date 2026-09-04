@@ -47,3 +47,10 @@ export const healthLogs = sqliteTable('health_logs', {
   title: text('title').notNull(), detail: text('detail').notNull().default(''), durationMinutes: integer('duration_minutes'), calories: integer('calories'), proteinGrams: integer('protein_grams'),
   createdAt: integer('created_at').notNull(), updatedAt: integer('updated_at').notNull(),
 }, (table) => [index('idx_health_logs_user_date_kind').on(table.userId, table.logDate, table.kind)]);
+
+export const healthTargets = sqliteTable('health_targets', {
+  id: text('id').primaryKey(), userId: text('user_id').notNull(), dailyCalories: integer('daily_calories').notNull().default(2200),
+  dailyProteinGrams: integer('daily_protein_grams').notNull().default(120), dailyWaterMl: integer('daily_water_ml').notNull().default(2500),
+  dailySteps: integer('daily_steps').notNull().default(8000), weeklyWorkouts: integer('weekly_workouts').notNull().default(4),
+  createdAt: integer('created_at').notNull(), updatedAt: integer('updated_at').notNull(),
+}, (table) => [uniqueIndex('idx_health_targets_user').on(table.userId)]);
